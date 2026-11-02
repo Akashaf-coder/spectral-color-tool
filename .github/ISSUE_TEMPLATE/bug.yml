@@ -1,0 +1,73 @@
+name: 问题反馈
+description: 导入解析不对、数值不符、界面异常等
+title: "[问题] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        填得越具体，修得越快。最有用的是「一条能复现的数据」+「期望值 vs 实际值」。
+        数据可以脱敏（保留波长-数值两列、改名字即可），但不要只贴截图，贴文本。
+
+  - type: textarea
+    id: env
+    attributes:
+      label: 环境
+      description: 浏览器和版本、操作系统；如果数值可疑，也写上显示器型号
+      placeholder: Edge 131 / Windows 11 / 公司笔记本内置屏
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 问题类型
+      options:
+        - 导入解析（列认错 / 单位错 / 波长为空 / 重采样）
+        - 数值不对（XYZ / Lab / RGB / ΔE 与预期不符）
+        - 色块显示（颜色看起来不对、超色域判断）
+        - 界面 / 交互
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: data
+    attributes:
+      label: 能复现的数据（前 10 行即可）
+      description: 原始表格内容，别转格式。同时说明列含义（哪列是波长、哪列是数值、单位是 0~1 还是百分比）
+      placeholder: |
+        400,0.12
+        405,0.125
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expect
+    attributes:
+      label: 期望值 vs 实际值
+      description: 数值问题请写清哪个量（XYZ / Lab / sRGB / 色域内外 / ΔE），以及你期望的来源（比如仪器软件、别的软件算出来是多少）
+      placeholder: |
+        期望 Lab ≈ 62.3, 18.4, 45.2（仪器软件给的）
+        实际 Lab = 62.3, 21.0, 45.0
+    validations:
+      required: false
+
+  - type: textarea
+    id: caliber
+    attributes:
+      label: 当时的口径设置
+      description: 光源、观察者（2°/10°）、显示色彩空间、色适应开关是否勾选、积分区间
+      placeholder: |
+        光源 A / 观察者 2° / sRGB / 色适应勾选 / 400–700nm@1nm
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 截图或补充
+      description: 可以直接拖图进来
+    validations:
+      required: false
