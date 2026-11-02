@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>光谱颜色模拟器</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <strong>光谱颜色模拟器</strong>
+    <span class="sub">反射率 × 光源 → 颜色</span>
+  </div>
+  <div class="actions">
+    <button id="btnExportLib" title="把整个库导出成 JSON 文件（可放进 git）">导出库</button>
+    <button id="btnImportLib" title="从 JSON 文件恢复库">导入库</button>
+    <input type="file" id="fileLib" accept=".json" hidden>
+  </div>
+</header>
+
+<main>
+  <!-- 左：库 -->
+  <section class="col">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>反射率库</h2>
+        <div class="btns">
+          <button id="btnImportCsv" class="primary sm">导入 CSV</button>
+          <button id="btnManual" class="sm">手动输入</button>
+        </div>
+      </div>
+      <ul id="listRefl" class="list"></ul>
+      <p id="emptyRefl" class="empty">还没有数据。点「导入 CSV」或「手动输入」，或者加载示例。</p>
+      <div class="btns sample">
+        <button id="btnSample" class="ghost sm">载入示例（18% 灰 / 白纸 / 橙色 / 窄带）</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>光源</h2></div>
+      <select id="selIllum" class="wide"></select>
+      <p class="hint" id="illumHint"></p>
+    </div>
+  </section>
+
+  <!-- 右：计算 -->
+  <section class="col wide-col">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>计算口径</h2>
+        <span class="badge" id="rangeBadge">—</span>
+      </div>
+      <div class="controls">
+        <label>观察者
+          <select id="selObserver">
+            <option value="2deg">CIE 1931 2°</option>
+            <option value="10deg">CIE 1964 10°</option>
+          </select>
+        </label>
+        <label>色块按此空间显示
+          <select id="selSpace">
+            <option>sRGB</option>
+            <option>Display P3</option>
+            <option>Adobe RGB (1998)</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="chkIllum" checked> 曲线图上叠加光源</label>
+        <label class="check" title="把光源白点适应到显示空间白点（Bradford），相当于白平衡">
+          <input type="checkbox" id="chkAdapt" checked> 显示前做色适应
+        </label>
+      </div>
+      <p class="hint" id="caliberHint">口径：1nm 等间隔积分（光源/反射率线性插值到 1nm）、相对色度（Y 归一 100）、Bradford 色适应。</p>
+    </div>
+
+    <div class="panel result" id="panelResult">
+      <div class="panel-head"><h2>模拟颜色</h2><span class="hint" id="resName"></span></div>
+      <div class="swatches">
+        <figure class="swatch">
+          <div class="chip" id="chipMain"></div>
+          <figcaption>模拟<span id="gamutTag" class="tag"></span></figcaption>
+        </figure>
+        <figure class="swatch" id="figMeasured" hidden>
+          <div class="chip" id="chipMeasured"></div>
+          <figcaption>实测</figcaption>
+        </figure>
+      </div>
+      <table class="values">
+        <tbody>
+          <tr><th>XYZ</th><td id="vXYZ">—</td></tr>
+          <tr><th>Lab</th><td id="vLab">—</td></tr>
+          <tr><th>LCh</th><td id="vLCh">—</td></tr>
+          <tr><th>sRGB</th><td id="vSrgb">—</td></tr>
+          <tr><th>Display P3</th><td id="vP3">—</td></tr>
+          <tr><th>Adobe RGB</th><td id="vAdobe">—</td></tr>
+          <tr><th>HEX</th><td id="vHex">—</td></tr>
+        </tbody>
+      </table>
+      <p class="hint" id="wpLine"></p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>光谱曲线</h2><span class="hint" id="plotHint">—</span></div>
+      <canvas id="plot" height="260"></canvas>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>实测值对比</h2><span class="hint">录入实测颜色，算 ΔE</span></div>
+      <div class="tabs">
+        <button class="tab active" data-mode="lab">Lab / XYZ</button>
+        <button class="tab" data-mode="rgb">RGB</button>
+        <button class="tab" data-mode="spec">光谱</button>
+      </div>
+
+      <div class="tabpane" data-pane="lab">
+        <div class="row">
+          <label>格式
+            <select id="selLabFmt">
+              <option value="lab">Lab</option>
+              <option value="xyz">XYZ</option>
+            </select>
+          </label>
+          <label><span id="uL1">L*</span><input id="mL1" type="number" step="0.01"></label>
+          <label><span id="uL2">a*</span><input id="mL2" type="number" step="0.01"></label>
+          <label><span id="uL3">b*</span><input id="mL3" type="number" step="0.01"></label>
+        </div>
+      </div>
+
+      <div class="tabpane" data-pane="rgb" hidden>
+        <div class="row">
+          <label>色彩空间
+            <select id="selMRgbSpace">
+              <option>sRGB</option>
+              <option>Display P3</option>
+              <option>Adobe RGB (1998)</option>
+            </select>
+          </label>
+          <label>量程
+            <select id="selMRgbScale">
+              <option value="255">0~255</option>
+              <option value="1">0~1</option>
+            </select>
+          </label>
+          <label>R<input id="mR" type="number" step="1"></label>
+          <label>G<input id="mG" type="number" step="1"></label>
+          <label>B<input id="mB" type="number" step="1"></label>
+        </div>
+        <p class="hint">实测 RGB 按当前光源的白点解释（即假定它已白平衡到当前光源）。若实测是别的光源下拍的，请改用 Lab 输入。</p>
+      </div>
+
+      <div class="tabpane" data-pane="spec" hidden>
+        <textarea id="mSpec" spellcheck="false" placeholder="粘贴一条实测光谱，两列：波长,数值&#10;例如：&#10;400,0.12&#10;410,0.13"></textarea>
+        <p class="hint">按当前光源与观察者重新计算它的颜色。</p>
+      </div>
+
+      <div class="dE-row">
+        <div class="dE-box"><span class="k">ΔE00</span><strong id="vDE00">—</strong><span class="v" id="vDE00Verdict"></span></div>
+        <div class="dE-box"><span class="k">ΔE76</span><strong id="vDE76">—</strong><span class="v"></span></div>
+        <button id="btnExportResult" class="ghost sm">导出结果 CSV</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- 导入 / 手动输入 弹窗 -->
+<div id="modal" class="modal" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 id="mTitle">导入光谱</h2>
+      <button id="mClose" class="ghost">关闭</button>
+    </div>
+
+    <div class="row">
+      <label>类型
+        <select id="imKind">
+          <option value="reflectance">反射率</option>
+          <option value="illuminant">光源 SPD</option>
+        </select>
+      </label>
+      <label class="grow">名称
+        <input id="imName" placeholder="例如：亚光白纸 A">
+      </label>
+      <label>文件
+        <input type="file" id="imFile" accept=".csv,.txt,.tsv,.dat">
+      </label>
+    </div>
+
+    <p class="hint">或者直接把表格内容粘贴到下面（支持逗号 / 分号 / 制表符 / 空格分隔）：</p>
+    <textarea id="imText" spellcheck="false" placeholder="400,0.120&#10;405,0.125&#10;410,0.131"></textarea>
+
+    <div class="grid3">
+      <label>表头行数 <input type="number" id="imHeader" min="0" step="1" value="0"></label>
+      <label>波长列（0 起，空=无） <input type="number" id="imWl" min="0" step="1"></label>
+      <label>数值列 <input type="number" id="imVal" min="0" step="1"></label>
+      <label>起始波长 <input type="number" id="imStart" step="1"></label>
+      <label>步长 <input type="number" id="imStep" step="1"></label>
+      <label>单位
+        <select id="imUnit">
+          <option value="ratio">0~1</option>
+          <option value="percent">0~100 %</option>
+          <option value="spd">相对值 SPD</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="imWarn" class="warn" hidden></div>
+    <div class="preview"><canvas id="imPlot" height="150"></canvas></div>
+    <pre id="imRaw" class="raw"></pre>
+
+    <div class="row right">
+      <button id="mCancel" class="ghost">取消</button>
+      <button id="mSave" class="primary">保存到库</button>
+    </div>
+  </div>
+</div>
+
+<script src="core.js"></script>
+<script src="colorimetry.js"></script>
+<script src="csv.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
