@@ -119,8 +119,25 @@
         <div class="btns" style="margin-bottom:6px">
           <button id="batchAll" class="sm">全选</button>
           <button id="batchNone" class="sm">清空</button>
+          <span id="batchGroups" class="btns"></span>
         </div>
         <div class="checklist" id="batchList"></div>
+      </div>
+      <div class="batch-tools">
+        <label class="inline">每行 <input type="number" id="batchCols" min="0" max="12" step="1" value="0"> 个</label>
+        <label class="check"><input type="checkbox" id="batchShowDE"> 显示 ΔE00（相对实测色）</label>
+        <label class="check"><input type="checkbox" id="batchShowCurves"> 曲线对比</label>
+        <button id="btnBatchExport" class="sm">导出批量结果</button>
+        <span class="spacer"></span>
+        <label class="inline">预设
+          <select id="batchPresetSel"></select>
+        </label>
+        <button id="batchPresetSave" class="sm">存为预设</button>
+        <button id="batchPresetDel" class="sm" title="删除选中预设">删</button>
+      </div>
+      <div class="batch-curves" id="batchCurves" hidden>
+        <div class="panel-head" style="margin-bottom:0"><span class="hint" id="batchCurvesHint">—</span></div>
+        <canvas id="batchPlot" height="220"></canvas>
       </div>
       <div class="batch-grid" id="batchGrid"></div>
     </div>

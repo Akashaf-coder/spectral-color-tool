@@ -33,6 +33,7 @@
     batchMode: "refls",
     batchReflIds: new Set(),
     batchIllums: new Set(["D65", "A"]),
+    lastBatch: [],
   };
 
   function load() {
@@ -332,10 +333,14 @@
     });
     ctx.restore();
 
-    // 图例
+    // 图例（超过 maxLegend 条时截断）
     let lx = pad.l + 6;
+    const maxLegend = opt.maxLegend == null ? 12 : opt.maxLegend;
+    let shown = 0;
     series.forEach((s) => {
       if (!s.label) return;
+      if (shown >= maxLegend) return;
+      shown++;
       ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.setLineDash(s.dash || []);
       ctx.beginPath(); ctx.moveTo(lx, pad.t + 4); ctx.lineTo(lx + 16, pad.t + 4); ctx.stroke();
       ctx.setLineDash([]);
@@ -343,6 +348,11 @@
       ctx.fillText(s.label, lx + 21, pad.t + 8);
       lx += ctx.measureText(s.label).width + 40;
     });
+    const hidden = series.filter((s) => s.label).length - shown;
+    if (hidden > 0) {
+      ctx.fillStyle = "#a0a0a8";
+      ctx.fillText(`+${hidden} 条`, lx, pad.t + 8);
+    }
   }
 
   function renderPlot() {
@@ -360,10 +370,17 @@
 
   /* ---------------- 批量模拟 ---------------- */
 
+  const PALETTE = ["#2f6feb", "#d97706", "#16a34a", "#dc2626", "#7c3aed", "#0891b2",
+    "#ca8a04", "#db2777", "#059669", "#9333ea", "#2563eb", "#ea580c"];
+  const PKEY = "specolor.presets.v1";
+
   function allIllumNames() {
-    const names = Object.keys(CORE.illuminants);
-    const libs = illumItems().map((i) => "lib:" + i.id);
-    return names.concat(libs);
+    return Object.keys(CORE.illuminants).concat(illumItems().map((i) => "lib:" + i.id));
+  }
+
+  function groupMembers(name) {
+    if (name === "__lib") return illumItems().map((i) => "lib:" + i.id);
+    return (CORE.illuminant_groups || {})[name] || [];
   }
 
   function renderBatchPicker() {
@@ -397,21 +414,68 @@
         renderBatch();
       });
     });
+    renderBatchGroups();
   }
 
-  function renderBatch() {
-    const grid = $("batchGrid");
-    const mode = state.batchMode;
-    const cells = [];
+  function renderBatchGroups() {
+    const box = $("batchGroups");
+    if (state.batchMode !== "illums") { box.innerHTML = ""; return; }
+    const names = Object.keys(CORE.illuminant_groups || {});
+    if (illumItems().length) names.push("__lib");
+    box.innerHTML = names.map((g) => {
+      const label = g === "__lib" ? "我的库" : g;
+      return `<button class="sm ghost" data-grp="${esc(g)}">${esc(label)}</button>`;
+    }).join("");
+    box.querySelectorAll("[data-grp]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const members = groupMembers(b.dataset.grp);
+        const allOn = members.every((m) => state.batchIllums.has(m));
+        members.forEach((m) => allOn ? state.batchIllums.delete(m) : state.batchIllums.add(m));
+        renderBatchPicker();
+        renderBatch();
+      });
+    });
+  }
+
+  function fixedMeasuredLab() {
+    const r = state.last;
+    if (!r) return null;
+    const wp = r.result.whitePoint;
+    if (state.tab === "lab") {
+      const v = [$("mL1").value, $("mL2").value, $("mL3").value];
+      if (v.some((x) => x === "")) return null;
+      const vals = v.map(Number);
+      if (vals.some((x) => !Number.isFinite(x))) return null;
+      return $("selLabFmt").value === "lab" ? vals : C.xyzToLab(vals, wp);
+    }
+    if (state.tab === "rgb") {
+      const raw = [$("mR").value, $("mG").value, $("mB").value];
+      if (raw.some((x) => x === "")) return null;
+      const scale = Number($("selMRgbScale").value);
+      const rgb01 = raw.map((x) => Number(x) / scale);
+      if (rgb01.some((x) => !Number.isFinite(x))) return null;
+      return C.xyzToLab(C.rgbToXyz(rgb01, $("selMRgbSpace").value), wp);
+    }
+    return null; // 实测光谱不参与批量对比（口径约定）
+  }
+
+  function buildBatchRows() {
+    const rows = [];
     const opts = { observerKey: state.observer, spaces: SPACES, adapt: state.adapt };
-    if (mode === "refls") {
-      const illum = (() => { try { return currentIllumSD(); } catch (e) { return null; } })();
-      const items = reflItems().filter((it) => state.batchReflIds.has(it.id));
-      items.forEach((it) => {
+    const deLab = $("batchShowDE").checked ? fixedMeasuredLab() : null;
+    if (state.batchMode === "refls") {
+      let illum;
+      try { illum = currentIllumSD(); } catch (e) { illum = null; }
+      if (!illum) return rows;
+      const illLabel = illumLabel();
+      reflItems().filter((it) => state.batchReflIds.has(it.id)).forEach((it) => {
         try {
           const r = C.compute({ refl: toSD(it), illum, ...opts });
-          cells.push(cellHTML(r, { label: it.name, dataId: it.id, kind: "refl", sub: illumLabel() }));
-        } catch (e) { /* 跳过无法计算的 */ }
+          rows.push({
+            reflName: it.name, illumName: illLabel, result: r,
+            de: deLab ? C.deltaE2000(r.Lab, deLab) : null, dataId: it.id,
+          });
+        } catch (e) { /* 跳过 */ }
       });
     } else {
       const it = itemById(state.selectedId);
@@ -420,16 +484,31 @@
           try {
             const illum = name.startsWith("lib:") ? toSD(itemById(name.slice(4))) : C.illuminant(name);
             const r = C.compute({ refl: toSD(it), illum, ...opts });
-            cells.push(cellHTML(r, { label: name.replace(/^lib:/, ""), dataIll: name, kind: "ill", sub: it.name }));
+            rows.push({
+              reflName: it.name, illumName: name.replace(/^lib:/, ""), result: r,
+              de: deLab ? C.deltaE2000(r.Lab, deLab) : null, dataIll: name,
+            });
           } catch (e) { /* 跳过 */ }
         });
       }
     }
-    grid.innerHTML = cells.join("");
-    const n = cells.length;
-    $("batchHint").textContent = n
-      ? `${n} 个组合 · 点击色块加载到上方详情`
-      : (mode === "refls" ? "勾选左侧至少一条反射率" : "勾选至少一个光源，并在左侧选中一条反射率");
+    return rows;
+  }
+
+  function renderBatch() {
+    const rows = buildBatchRows();
+    state.lastBatch = rows;
+    const grid = $("batchGrid");
+    const cols = Number($("batchCols").value) || 0;
+    grid.style.gridTemplateColumns = cols > 0 ? `repeat(${cols}, minmax(88px, 1fr))` : "";
+    grid.innerHTML = rows.map((row) => {
+      const label = state.batchMode === "refls" ? row.reflName : row.illumName;
+      const sub = state.batchMode === "refls" ? row.illumName : row.reflName;
+      return cellHTML(row, label, sub);
+    }).join("");
+    $("batchHint").textContent = rows.length
+      ? `${rows.length} 个组合 · 点击色块加载到上方详情`
+      : (state.batchMode === "refls" ? "勾选左侧至少一条反射率" : "勾选至少一个光源，并在左侧选中一条反射率");
     grid.querySelectorAll(".bcell").forEach((el) => {
       el.addEventListener("click", () => {
         if (el.dataset.id) { state.selectedId = el.dataset.id; renderLibrary(); }
@@ -437,21 +516,117 @@
         recompute();
       });
     });
+    renderBatchCurves(rows);
+  }
+
+  function cellHTML(row, label, sub) {
+    const obj = row.result.rgb[state.space];
+    const lab = row.result.Lab;
+    const de = (row.de != null && Number.isFinite(row.de)) ? `ΔE00 ${fmt(row.de, 1)}` : "";
+    return `<div class="bcell" data-id="${row.dataId || ""}" data-ill="${row.dataIll || ""}">
+      <div class="bchip" style="background:${obj.hex}">${obj.inside ? "" : '<span class="ogdot" title="超出 ' + state.space + ' 色域"></span>'}</div>
+      <div class="bname" title="${esc(label)}">${esc(label)}</div>
+      <div class="blab">${fmt(lab[0], 0)} / ${fmt(lab[1], 0)} / ${fmt(lab[2], 0)}</div>
+      ${de ? `<div class="bde">${de}</div>` : ""}
+      <div class="bsub">${esc(sub || "")}</div>
+    </div>`;
+  }
+
+  function renderBatchCurves(rows) {
+    const box = $("batchCurves");
+    if (!$("batchShowCurves").checked) { box.hidden = true; return; }
+    box.hidden = false;
+    const series = [];
+    if (state.batchMode === "refls") {
+      const items = reflItems().filter((it) => state.batchReflIds.has(it.id));
+      items.forEach((it, i) => series.push({ sd: toSD(it), color: PALETTE[i % PALETTE.length], label: it.name, width: 1.6 }));
+      $("batchCurvesHint").textContent = `${items.length} 条反射率（0~1）`;
+      drawChart($("batchPlot"), series, { fixedY: 1, maxLegend: 10 });
+    } else {
+      state.batchIllums.forEach((name, i) => {
+        try {
+          const sd = name.startsWith("lib:") ? toSD(itemById(name.slice(4))) : C.illuminant(name);
+          series.push({ sd, color: PALETTE[i % PALETTE.length], label: name.replace(/^lib:/, ""), scaleToMax: true, width: 1.3 });
+        } catch (e) { /* 跳过 */ }
+      });
+      $("batchCurvesHint").textContent = `${series.length} 个光源（各自峰值归一到 1，比较形状）`;
+      drawChart($("batchPlot"), series, { fixedY: 1, maxLegend: 10 });
+    }
+  }
+
+  /* ---------------- 预设 ---------------- */
+
+  function loadPresets() {
+    try { return JSON.parse(localStorage.getItem(PKEY)) || {}; } catch (e) { return {}; }
+  }
+
+  function savePresets(p) {
+    try { localStorage.setItem(PKEY, JSON.stringify(p)); } catch (e) { alert("保存预设失败：" + e.message); }
+  }
+
+  function renderBatchPresets() {
+    const sel = $("batchPresetSel");
+    const names = Object.keys(loadPresets());
+    sel.innerHTML = `<option value="">（未选择）</option>` +
+      names.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
+  }
+
+  function saveBatchPreset() {
+    const name = (prompt("预设名称：") || "").trim();
+    if (!name) return;
+    const p = loadPresets();
+    p[name] = { mode: state.batchMode, refls: [...state.batchReflIds], illums: [...state.batchIllums] };
+    savePresets(p);
+    renderBatchPresets();
+    $("batchPresetSel").value = name;
+  }
+
+  function applyBatchPreset() {
+    const name = $("batchPresetSel").value;
+    if (!name) return;
+    const p = loadPresets()[name];
+    if (!p) return;
+    state.batchMode = p.mode;
+    state.batchReflIds = new Set((p.refls || []).filter((id) => reflItems().some((i) => i.id === id)));
+    const validIll = new Set(allIllumNames());
+    state.batchIllums = new Set((p.illums || []).filter((n) => validIll.has(n)));
+    document.querySelectorAll(".tab[data-batch]").forEach((x) => x.classList.toggle("active", x.dataset.batch === state.batchMode));
+    renderBatchPicker();
+    renderBatch();
+  }
+
+  function delBatchPreset() {
+    const name = $("batchPresetSel").value;
+    if (!name) return;
+    const p = loadPresets();
+    delete p[name];
+    savePresets(p);
+    renderBatchPresets();
+  }
+
+  function exportBatch() {
+    const rows = state.lastBatch || [];
+    if (!rows.length) { alert("批量面板没有结果，先勾选并生成。"); return; }
+    const n4 = (v) => (Math.abs(v) < 1e-9 ? 0 : v).toFixed(4);
+    const head = ["反射率", "光源", "观察者", "积分区间", "X", "Y", "Z", "L*", "a*", "b*",
+      ...SPACES.flatMap((s) => [s + "_R", s + "_G", s + "_B"]), "HEX", "超色域", "ΔE00"];
+    const body = rows.map((row) => {
+      const res = row.result;
+      return [
+        row.reflName, row.illumName, state.observer,
+        `${res.range.lo}-${res.range.hi}nm@${res.range.step}nm`,
+        ...res.XYZ.map(n4), ...res.Lab.map(n4),
+        ...SPACES.flatMap((s) => res.rgb[s].rgb.map((v) => (Math.abs(v) < 1e-9 ? 0 : v).toFixed(5))),
+        res.rgb[state.space].hex,
+        SPACES.filter((s) => !res.rgb[s].inside).join("/") || "无",
+        (row.de != null && Number.isFinite(row.de)) ? row.de.toFixed(3) : "",
+      ];
+    });
+    download("批量模拟.csv", CSV.toCsv([head, ...body]), "text/csv;charset=utf-8");
   }
 
   function illumLabel() {
     return state.illumName.replace(/^lib:/, "");
-  }
-
-  function cellHTML(r, o) {
-    const obj = r.rgb[state.space];
-    const lab = r.Lab;
-    return `<div class="bcell" data-id="${o.dataId || ""}" data-ill="${o.dataIll || ""}">
-      <div class="bchip" style="background:${obj.hex}">${obj.inside ? "" : '<span class="ogdot" title="超出 ' + state.space + ' 色域"></span>'}</div>
-      <div class="bname" title="${esc(o.label)}">${esc(o.label)}</div>
-      <div class="blab">${fmt(lab[0], 0)} / ${fmt(lab[1], 0)} / ${fmt(lab[2], 0)}</div>
-      <div class="bsub">${esc(o.sub || "")}</div>
-    </div>`;
   }
 
   /* ---------------- 实测对比 ---------------- */
@@ -731,6 +906,13 @@
       renderBatchPicker();
       renderBatch();
     });
+    $("batchCols").addEventListener("change", renderBatch);
+    $("batchShowDE").addEventListener("change", renderBatch);
+    $("batchShowCurves").addEventListener("change", renderBatch);
+    $("btnBatchExport").addEventListener("click", exportBatch);
+    $("batchPresetSave").addEventListener("click", saveBatchPreset);
+    $("batchPresetDel").addEventListener("click", delBatchPreset);
+    $("batchPresetSel").addEventListener("change", applyBatchPreset);
     ["mL1", "mL2", "mL3", "mR", "mG", "mB", "mSpec"].forEach((id) => {
       $(id).addEventListener("input", renderMeasured);
     });
@@ -795,6 +977,7 @@
   bind();
   renderIllumSelect();
   renderLibrary();
+  renderBatchPresets();
   $("selObserver").value = state.observer;
   $("selSpace").value = state.space;
   recompute();
