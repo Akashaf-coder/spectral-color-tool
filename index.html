@@ -125,6 +125,10 @@
       </div>
       <div class="batch-tools">
         <label class="inline">每行 <input type="number" id="batchCols" min="0" max="12" step="1" value="0"> 个</label>
+        <span id="batchPosCtl" class="inline-group">
+          <label class="inline">卡尺寸 <input type="number" id="boardRows" min="1" max="40" step="1" value="4"> × <input type="number" id="boardCols" min="1" max="40" step="1" value="6"></label>
+          <label class="check"><input type="checkbox" id="batchPos"> 按位置排布</label>
+        </span>
         <label class="check"><input type="checkbox" id="batchShowDE"> 显示 ΔE00（相对实测色）</label>
         <label class="check"><input type="checkbox" id="batchShowCurves"> 曲线对比</label>
         <button id="btnBatchExport" class="sm">导出批量结果</button>

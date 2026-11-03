@@ -275,3 +275,17 @@ table.values tr + tr th, table.values tr + tr td { border-top: 1px solid #f1f1f3
 .batch-curves[hidden] { display: none; }
 #batchPlot { width: 100%; height: 220px; display: block; }
 .bde { font-size: 11px; color: #b45309; font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+
+/* 位置排布（色卡还原） */
+.inline-group { display: inline-flex; align-items: center; gap: 12px; }
+.board { margin-bottom: 14px; }
+.board-name { font-size: 12px; font-weight: 600; color: #3a3a3f; margin: 2px 0 6px; }
+.board-grid { display: grid; gap: 8px; }
+.board-rest { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.board-rest .bcell { width: 110px; flex: none; }
+.bcell.empty {
+  background: transparent; border: 1px dashed #e8e8ec; cursor: default; min-height: 84px;
+}
+.bcell.empty:hover { background: transparent; border-color: #e8e8ec; }
+.list li .pos { border: none; background: transparent; color: #b0b0b6; padding: 2px 4px; font-size: 13px; line-height: 1; }
+.list li .pos:hover { color: #2f6feb; background: transparent; }

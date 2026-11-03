@@ -112,7 +112,8 @@
       return `<li data-id="${it.id}" class="${it.id === state.selectedId ? "active" : ""}">
         <span class="swatchdot" style="background:${dot}"></span>
         <span class="name" title="${esc(it.name)}">${esc(it.name)}</span>
-        <span class="meta">${it.start}–${Math.round(it.start + it.step * (it.values.length - 1))}nm / ${it.step}nm</span>
+        <span class="meta">${it.start}–${Math.round(it.start + it.step * (it.values.length - 1))}nm / ${it.step}nm${it.group ? ` · ${esc(it.group)}·${it.row ?? "?"}·${it.col ?? "?"}` : ""}</span>
+        <button class="pos" data-pos="${it.id}" title="设置位置（分组,行,列）">⌖</button>
         <button class="del" data-del="${it.id}" title="删除">×</button>
       </li>`;
     }).join("");
@@ -129,6 +130,24 @@
         const it = itemById(li.dataset.id);
         const name = prompt("重命名", it.name);
         if (name && name.trim()) { it.name = name.trim(); save(); renderLibrary(); renderResult(); }
+      });
+    });
+    ul.querySelectorAll("[data-pos]").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const it = itemById(b.dataset.pos);
+        const cur = it.group ? `${it.group},${it.row ?? ""},${it.col ?? ""}` : "";
+        const v = prompt(`「${it.name}」的位置：分组,行,列（如 A,3,4；留空清除）`, cur);
+        if (v === null) return;
+        const t = v.trim();
+        if (t === "") { delete it.group; delete it.row; delete it.col; }
+        else {
+          const [g, r, c] = t.split(",").map((s) => s.trim());
+          if (g) it.group = g;
+          it.row = r ? parseInt(r, 10) : undefined;
+          it.col = c ? parseInt(c, 10) : undefined;
+        }
+        save(); renderLibrary(); renderBatchPicker(); recompute();
       });
     });
     ul.querySelectorAll("[data-del]").forEach((b) => {
@@ -419,22 +438,35 @@
 
   function renderBatchGroups() {
     const box = $("batchGroups");
-    if (state.batchMode !== "illums") { box.innerHTML = ""; return; }
-    const names = Object.keys(CORE.illuminant_groups || {});
-    if (illumItems().length) names.push("__lib");
-    box.innerHTML = names.map((g) => {
-      const label = g === "__lib" ? "我的库" : g;
-      return `<button class="sm ghost" data-grp="${esc(g)}">${esc(label)}</button>`;
-    }).join("");
+    let names, labelOf, membersOf, hasMember, toggle;
+    if (state.batchMode === "illums") {
+      names = Object.keys(CORE.illuminant_groups || {});
+      if (illumItems().length) names.push("__lib");
+      labelOf = (g) => (g === "__lib" ? "我的库" : g);
+      membersOf = groupMembers;
+      hasMember = (m) => state.batchIllums.has(m);
+      toggle = (m, on) => m.forEach((x) => on ? state.batchIllums.add(x) : state.batchIllums.delete(x));
+    } else {
+      // 反射率按「卡」（group 字段）分组
+      const byGroup = {};
+      reflItems().forEach((it) => { const k = it.group || ""; (byGroup[k] = byGroup[k] || []).push(it.id); });
+      names = Object.keys(byGroup).sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
+      labelOf = (g) => (g === "" ? "未分组" : g);
+      membersOf = (g) => byGroup[g] || [];
+      hasMember = (id) => state.batchReflIds.has(id);
+      toggle = (m, on) => m.forEach((id) => on ? state.batchReflIds.add(id) : state.batchReflIds.delete(id));
+    }
+    box.innerHTML = names.map((g) => `<button class="sm ghost" data-grp="${esc(g)}">${esc(labelOf(g))}</button>`).join("");
     box.querySelectorAll("[data-grp]").forEach((b) => {
       b.addEventListener("click", () => {
-        const members = groupMembers(b.dataset.grp);
-        const allOn = members.every((m) => state.batchIllums.has(m));
-        members.forEach((m) => allOn ? state.batchIllums.delete(m) : state.batchIllums.add(m));
+        const members = membersOf(b.dataset.grp);
+        const on = !members.every((m) => hasMember(m));
+        toggle(members, on);
         renderBatchPicker();
         renderBatch();
       });
     });
+    $("batchPosCtl").hidden = state.batchMode !== "refls";
   }
 
   function fixedMeasuredLab() {
@@ -473,6 +505,7 @@
           const r = C.compute({ refl: toSD(it), illum, ...opts });
           rows.push({
             reflName: it.name, illumName: illLabel, result: r,
+            group: it.group || "", row: it.row, col: it.col,
             de: deLab ? C.deltaE2000(r.Lab, deLab) : null, dataId: it.id,
           });
         } catch (e) { /* 跳过 */ }
@@ -486,6 +519,7 @@
             const r = C.compute({ refl: toSD(it), illum, ...opts });
             rows.push({
               reflName: it.name, illumName: name.replace(/^lib:/, ""), result: r,
+              group: it.group || "", row: it.row, col: it.col,
               de: deLab ? C.deltaE2000(r.Lab, deLab) : null, dataIll: name,
             });
           } catch (e) { /* 跳过 */ }
@@ -499,13 +533,21 @@
     const rows = buildBatchRows();
     state.lastBatch = rows;
     const grid = $("batchGrid");
-    const cols = Number($("batchCols").value) || 0;
-    grid.style.gridTemplateColumns = cols > 0 ? `repeat(${cols}, minmax(88px, 1fr))` : "";
-    grid.innerHTML = rows.map((row) => {
-      const label = state.batchMode === "refls" ? row.reflName : row.illumName;
-      const sub = state.batchMode === "refls" ? row.illumName : row.reflName;
-      return cellHTML(row, label, sub);
-    }).join("");
+    const positional = state.batchMode === "refls" && $("batchPos").checked;
+    if (positional) {
+      const bRows = Number($("boardRows").value) || 4;
+      const bCols = Number($("boardCols").value) || 6;
+      grid.style.gridTemplateColumns = "";
+      grid.innerHTML = renderBoards(rows, bRows, bCols);
+    } else {
+      const cols = Number($("batchCols").value) || 0;
+      grid.style.gridTemplateColumns = cols > 0 ? `repeat(${cols}, minmax(88px, 1fr))` : "";
+      grid.innerHTML = rows.map((row) => {
+        const label = state.batchMode === "refls" ? row.reflName : row.illumName;
+        const sub = state.batchMode === "refls" ? row.illumName : row.reflName;
+        return cellHTML(row, label, sub);
+      }).join("");
+    }
     $("batchHint").textContent = rows.length
       ? `${rows.length} 个组合 · 点击色块加载到上方详情`
       : (state.batchMode === "refls" ? "勾选左侧至少一条反射率" : "勾选至少一个光源，并在左侧选中一条反射率");
@@ -517,6 +559,34 @@
       });
     });
     renderBatchCurves(rows);
+  }
+
+  function renderBoards(rows, bRows, bCols) {
+    const groups = {};
+    rows.forEach((r) => { const k = r.group || ""; (groups[k] = groups[k] || []).push(r); });
+    const keys = Object.keys(groups).sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
+    let html = "";
+    keys.forEach((k) => {
+      const list = groups[k];
+      const label = k === "" ? "未分组" : k;
+      const placed = list.filter((r) => Number.isFinite(r.row) && Number.isFinite(r.col) && r.row >= 1 && r.col >= 1 && r.row <= bRows && r.col <= bCols);
+      const rest = list.filter((r) => !(Number.isFinite(r.row) && Number.isFinite(r.col) && r.row >= 1 && r.col >= 1 && r.row <= bRows && r.col <= bCols));
+      html += `<div class="board"><div class="board-name">${esc(label)}</div>`;
+      if (placed.length) {
+        const cells = new Array(bRows * bCols).fill("");
+        placed.forEach((r) => {
+          const idx = (r.row - 1) * bCols + (r.col - 1);
+          if (idx >= 0 && idx < bRows * bCols) cells[idx] = cellHTML(r, r.reflName, r.illumName);
+        });
+        html += `<div class="board-grid" style="grid-template-columns:repeat(${bCols}, minmax(60px, 1fr))">` +
+          cells.map((c) => c || `<div class="bcell empty"></div>`).join("") + `</div>`;
+      }
+      if (rest.length) {
+        html += `<div class="board-rest">` + rest.map((r) => cellHTML(r, r.reflName, r.illumName)).join("") + `</div>`;
+      }
+      html += `</div>`;
+    });
+    return html;
   }
 
   function cellHTML(row, label, sub) {
@@ -608,12 +678,12 @@
     const rows = state.lastBatch || [];
     if (!rows.length) { alert("批量面板没有结果，先勾选并生成。"); return; }
     const n4 = (v) => (Math.abs(v) < 1e-9 ? 0 : v).toFixed(4);
-    const head = ["反射率", "光源", "观察者", "积分区间", "X", "Y", "Z", "L*", "a*", "b*",
+    const head = ["反射率", "光源", "分组", "行", "列", "观察者", "积分区间", "X", "Y", "Z", "L*", "a*", "b*",
       ...SPACES.flatMap((s) => [s + "_R", s + "_G", s + "_B"]), "HEX", "超色域", "ΔE00"];
     const body = rows.map((row) => {
       const res = row.result;
       return [
-        row.reflName, row.illumName, state.observer,
+        row.reflName, row.illumName, row.group || "", row.row ?? "", row.col ?? "", state.observer,
         `${res.range.lo}-${res.range.hi}nm@${res.range.step}nm`,
         ...res.XYZ.map(n4), ...res.Lab.map(n4),
         ...SPACES.flatMap((s) => res.rgb[s].rgb.map((v) => (Math.abs(v) < 1e-9 ? 0 : v).toFixed(5))),
@@ -907,6 +977,9 @@
       renderBatch();
     });
     $("batchCols").addEventListener("change", renderBatch);
+    $("boardRows").addEventListener("change", renderBatch);
+    $("boardCols").addEventListener("change", renderBatch);
+    $("batchPos").addEventListener("change", renderBatch);
     $("batchShowDE").addEventListener("change", renderBatch);
     $("batchShowCurves").addEventListener("change", renderBatch);
     $("btnBatchExport").addEventListener("click", exportBatch);
