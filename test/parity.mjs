@@ -44,7 +44,7 @@ for (const c of ref.cases) {
     refl: c.refl,
     illum: c.illuminant,
     observerKey: c.observer,
-    spaces: ["sRGB", "Display P3", "Adobe RGB (1998)"],
+    spaces: ["sRGB", "Display P3", "Adobe RGB (1998)", "ITU-R BT.2020"],
   };
   const r = C.compute({ ...base, adapt: false });
   const ra = C.compute({ ...base, adapt: true });

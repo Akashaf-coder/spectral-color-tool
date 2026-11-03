@@ -18,7 +18,7 @@ CMFS = {
     "2deg": colour.MSDS_CMFS["CIE 1931 2 Degree Standard Observer"],
     "10deg": colour.MSDS_CMFS["CIE 1964 10 Degree Standard Observer"],
 }
-SPACES = ["sRGB", "Display P3", "Adobe RGB (1998)"]
+SPACES = ["sRGB", "Display P3", "Adobe RGB (1998)", "ITU-R BT.2020"]
 
 
 def sd(start, step, values):
@@ -36,6 +36,10 @@ def encode_rgb(lin, space_name):
     if space_name in ("sRGB", "Display P3"):
         safe = np.maximum(lin, 0.0)
         enc = np.where(safe <= 0.0031308, 12.92 * safe, 1.055 * safe ** (1 / 2.4) - 0.055)
+    elif space_name == "ITU-R BT.2020":
+        alpha, beta = 1.099, 0.018  # OETF（非 12-bit 系统）
+        safe = np.maximum(lin, 0.0)
+        enc = np.where(safe < beta, 4.5 * safe, alpha * safe ** 0.45 - (alpha - 1))
     else:  # Adobe RGB (1998)：纯 gamma 2.19921875
         enc = np.power(np.maximum(lin, 0.0), 256 / 563)
     return np.where(lin <= 0, lin, enc)

@@ -25,7 +25,15 @@ CMF_START, CMF_END, CMF_STEP = 360, 830, 1
 ILL_START, ILL_END, ILL_STEP = 300, 780, 5
 
 # 色彩空间
-SPACES = ["sRGB", "Display P3", "Adobe RGB (1998)"]
+SPACES = ["sRGB", "Display P3", "Adobe RGB (1998)", "ITU-R BT.2020"]
+
+# 传递函数类型（colorimetry.js 里按这个 key 走对应公式）
+TRANSFER = {
+    "sRGB": "sRGB",
+    "Display P3": "sRGB",
+    "Adobe RGB (1998)": "g2.19921875",
+    "ITU-R BT.2020": "bt2020",  # OETF：α=1.099, β=0.018
+}
 
 
 def resample(sd, start, end, step):
@@ -84,8 +92,8 @@ def main():
             # colour 的 whitepoint 是 xy 色度，这里存成 XYZ（Y=1），便于做色适应
             "whitepoint_xy": [round(float(v), 6) for v in cs.whitepoint],
             "whitepoint": [round(float(v), 6) for v in colour.xy_to_XYZ(cs.whitepoint)],
+            "transfer": TRANSFER[n],
             "whitepoint_name": cs.whitepoint_name,
-            "transfer": "sRGB" if n in ("sRGB", "Display P3") else "g2.19921875",
         }
     core["spaces"] = spaces
     core["space_order"] = SPACES

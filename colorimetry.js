@@ -151,12 +151,14 @@
   function encode(c, kind) {
     if (c <= 0) return c; // 负值原样保留，交给色域判断
     if (kind === "sRGB") return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+    if (kind === "bt2020") return c < 0.018 ? 4.5 * c : 1.099 * Math.pow(c, 0.45) - 0.099;
     return Math.pow(c, 256 / 563); // Adobe RGB (1998) 纯 gamma 2.19921875
   }
 
   function decode(c, kind) {
     if (c <= 0) return c;
     if (kind === "sRGB") return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    if (kind === "bt2020") return c < 4.5 * 0.018 ? c / 4.5 : Math.pow((c + 0.099) / 1.099, 1 / 0.45);
     return Math.pow(c, 563 / 256);
   }
 

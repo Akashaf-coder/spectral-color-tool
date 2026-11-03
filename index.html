@@ -63,6 +63,7 @@
             <option>sRGB</option>
             <option>Display P3</option>
             <option>Adobe RGB (1998)</option>
+            <option>ITU-R BT.2020</option>
           </select>
         </label>
         <label class="check"><input type="checkbox" id="chkIllum" checked> 曲线图上叠加光源</label>
@@ -93,6 +94,7 @@
           <tr><th>sRGB</th><td id="vSrgb">—</td></tr>
           <tr><th>Display P3</th><td id="vP3">—</td></tr>
           <tr><th>Adobe RGB</th><td id="vAdobe">—</td></tr>
+          <tr><th>BT.2020</th><td id="vBt2020">—</td></tr>
           <tr><th>HEX</th><td id="vHex">—</td></tr>
         </tbody>
       </table>
@@ -102,6 +104,25 @@
     <div class="panel">
       <div class="panel-head"><h2>光谱曲线</h2><span class="hint" id="plotHint">—</span></div>
       <canvas id="plot" height="260"></canvas>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>批量模拟</h2>
+        <span class="hint" id="batchHint">—</span>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-batch="refls">多反射率 × 单光源</button>
+        <button class="tab" data-batch="illums">单反射率 × 多光源</button>
+      </div>
+      <div class="batch-pick">
+        <div class="btns" style="margin-bottom:6px">
+          <button id="batchAll" class="sm">全选</button>
+          <button id="batchNone" class="sm">清空</button>
+        </div>
+        <div class="checklist" id="batchList"></div>
+      </div>
+      <div class="batch-grid" id="batchGrid"></div>
     </div>
 
     <div class="panel">
@@ -133,6 +154,7 @@
               <option>sRGB</option>
               <option>Display P3</option>
               <option>Adobe RGB (1998)</option>
+              <option>ITU-R BT.2020</option>
             </select>
           </label>
           <label>量程
