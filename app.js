@@ -30,6 +30,7 @@
     tab: "lab",
     measured: {},
     last: null,
+    search: "",
     batchMode: "refls",
     batchReflIds: new Set(),
     batchIllums: new Set(["D65", "A"]),
@@ -96,19 +97,33 @@
     return state.library.items.filter((i) => i.kind !== "illuminant");
   }
 
+  // 列表色点缓存：避免 400+ 条目每次渲染都重算一遍颜色
+  const dotCache = new Map();
+  function dotHex(it) {
+    const key = it.id + "|" + (state.adapt ? 1 : 0);
+    if (dotCache.has(key)) return dotCache.get(key);
+    let dot = "#ddd";
+    try {
+      const r = C.compute({ refl: toSD(it), illum: C.illuminant("D65"), observerKey: "2deg", spaces: ["sRGB"], adapt: state.adapt });
+      dot = r.rgb.sRGB.hex;
+    } catch (e) { /* 忽略 */ }
+    dotCache.set(key, dot);
+    return dot;
+  }
+
   function illumItems() {
     return state.library.items.filter((i) => i.kind === "illuminant");
   }
 
   function renderLibrary() {
     const ul = $("listRefl");
-    const items = reflItems();
+    const q = (state.search || "").trim().toLowerCase();
+    const all = reflItems();
+    const items = q
+      ? all.filter((it) => it.name.toLowerCase().includes(q) || (it.group || "").toLowerCase().includes(q))
+      : all;
     ul.innerHTML = items.map((it) => {
-      let dot = "#ddd";
-      try {
-        const r = C.compute({ refl: toSD(it), illum: C.illuminant("D65"), observerKey: "2deg", spaces: ["sRGB"], adapt: state.adapt });
-        dot = r.rgb.sRGB.hex;
-      } catch (e) { /* 忽略 */ }
+      const dot = dotHex(it);
       return `<li data-id="${it.id}" class="${it.id === state.selectedId ? "active" : ""}">
         <span class="swatchdot" style="background:${dot}"></span>
         <span class="name" title="${esc(it.name)}">${esc(it.name)}</span>
@@ -118,6 +133,10 @@
       </li>`;
     }).join("");
     $("emptyRefl").hidden = items.length > 0;
+    $("emptyRefl").textContent = (q && !items.length)
+      ? `没有匹配「${state.search}」`
+      : "还没有数据。点「导入 CSV」或「手动输入」，或者加载示例。";
+    $("reflCount").textContent = q ? `显示 ${items.length} / 共 ${all.length} 条` : `共 ${all.length} 条`;
 
     ul.querySelectorAll("li").forEach((li) => {
       li.addEventListener("click", (e) => {
@@ -537,7 +556,7 @@
     if (positional) {
       const bRows = Number($("boardRows").value) || 4;
       const bCols = Number($("boardCols").value) || 6;
-      grid.style.gridTemplateColumns = "";
+      grid.style.gridTemplateColumns = "1fr";
       grid.innerHTML = renderBoards(rows, bRows, bCols);
     } else {
       const cols = Number($("batchCols").value) || 0;
@@ -922,6 +941,7 @@
 
   function bind() {
     $("btnImportCsv").addEventListener("click", () => openModal("reflectance"));
+    $("reflSearch").addEventListener("input", (e) => { state.search = e.target.value; renderLibrary(); });
     $("btnManual").addEventListener("click", () => {
       openModal($("imKind").value === "illuminant" ? "reflectance" : "reflectance");
       $("mTitle").textContent = "手动输入光谱";
