@@ -206,3 +206,69 @@ Python 只在这个环节用到，运行网页时完全不需要。
 
 数据请贴文本，不要只贴截图——解析问题光看图复现不了。
 
+---
+
+## 9. Python SDK（脚本调用）
+
+`cospec/` 目录是一个纯 Python、零第三方依赖的 SDK，和网页版共用同一份 CIE 数据、
+同一套计算口径，输出数值与网页完全一致（用同一份 reference.json 回归，见下）。
+
+### 安装
+
+二选一：
+
+```sh
+# 方式 A：pip 可编辑安装（装一次，任何目录都能 import cospec）
+pip install -e /path/to/spectral-color-tool
+
+# 方式 B：不安装，脚本里手动加路径
+import sys; sys.path.append("/path/to/spectral-color-tool")
+```
+
+### 用法
+
+```python
+import cospec
+
+# 输入三样：反射率（0~1）、光源、是否色适应
+r = cospec.simulate(
+    refl=[(380, 0.18), (390, 0.18), (400, 0.18), ...],   # [(波长, 值), ...]
+    # 也支持 dict{start,step,values} 或 (start, step, values) 三元组
+    illum="D65",          # 内置光源名（59 个），或自定义光谱（同上三种形式）
+    observer="2deg",      # "2deg" = CIE 1931 2° / "10deg" = CIE 1964 10°
+    adapt=True,           # 是否做 Bradford 色适应
+)
+
+r["XYZ"]                       # [X, Y, Z] 0~100
+r["Lab"]                       # [L*, a*, b*]
+r["LCh"]                       # [L, C, h°]
+r["white_point"]               # 参考白 XYZ
+r["range"]                     # {"lo","hi","step","count"} 实际积分区间
+r["rgb"]["sRGB"]["hex"]        # "#767676"
+r["rgb"]["sRGB"]["rgb"]        # [r, g, b] 0~1（未裁剪）
+r["rgb"]["sRGB"]["inside"]     # 是否在色域内
+# 空间：sRGB / Display P3 / Adobe RGB (1998) / ITU-R BT.2020
+
+# 色差
+cospec.delta_e00(lab1, lab2)   # CIEDE2000
+cospec.delta_e76(lab1, lab2)   # CIE76
+```
+
+内置光源名：`cospec.ILLUMINANTS` 的键（A、C、D50/D55/D65/D75、E、FL1–12、LED 系列、HP 系列）。
+
+### 数值一致性
+
+`test/sdk_parity.py` 用与网页版同一份 `test/reference.json`（colour-science 生成）
+逐项比对，保证 Python SDK == 网页 colorimetry.js == colour-science：
+
+```
+python3 test/sdk_parity.py
+与 colour-science 的最大偏差（Python SDK）：
+  XYZ   4.89e-3   (0~100 刻度)
+  Lab   8.94e-3
+  RGB   1.41e-4   (0~1 刻度)
+  RGB(色适应后) 1.12e-4
+  ΔE    1.29e-14
+```
+
+

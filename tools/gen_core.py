@@ -104,6 +104,16 @@ def main():
                  f"{colour.__version__} / CIE 官方推荐值 */\n")
         fh.write("window.COSPEC_CORE=" + payload + ";\n")
 
+    # 同一份数据再导出成 Python 模块（SDK 用），保证网页与 SDK 数值一致
+    sdk_dir = os.path.join(os.path.dirname(OUT), "cospec")
+    os.makedirs(sdk_dir, exist_ok=True)
+    sdk_data = os.path.join(sdk_dir, "data.py")
+    with open(sdk_data, "w", encoding="utf-8") as fh:
+        fh.write("# 由 tools/gen_core.py 生成，勿手改。数据与 core.js 同源。\n")
+        fh.write("import json\n\n")
+        fh.write("DATA = json.loads(r'''" + payload + "''')\n")
+    print(f"写入 {sdk_data}  {os.path.getsize(sdk_data)/1024:.1f} KB")
+
     size = os.path.getsize(OUT)
     print(f"写入 {OUT}  {size/1024:.1f} KB")
     print(f"  观察者 {len(core['cmfs'])}（各 {len(cmfs['2deg']['x'])} 点 @1nm）")

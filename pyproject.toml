@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cospec"
+version = "0.1.0"
+description = "光谱颜色模拟 SDK：反射率 × 光源 → XYZ/Lab/sRGB/P3/Adobe/BT.2020，纯 Python 零依赖"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+
+[tool.setuptools]
+packages = ["cospec"]
