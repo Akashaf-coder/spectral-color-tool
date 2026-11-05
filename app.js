@@ -1117,5 +1117,15 @@
   $("selObserver").value = state.observer;
   $("selSpace").value = state.space;
   recompute();
+  // 页脚作者信息（来自 meta.js，仅在内部发行版 show=true 时显示）
+  const META = window.APP_META || {};
+  if (META.show) {
+    const parts = [META.author, META.contact].filter(Boolean);
+    const foot = $("foot");
+    if (parts.length && foot) {
+      foot.textContent = "作者：" + parts.join(" · 联系：");
+      foot.hidden = false;
+    }
+  }
   window.__SPECOLOR__ = { state, C, CSV };
 })();

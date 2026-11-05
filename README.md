@@ -272,3 +272,32 @@ python3 test/sdk_parity.py
 ```
 
 
+
+---
+
+## 10. 内部发行（署名 + 打包）
+
+公司内网版本想署真名、留工号时，只需要改一个文件 `meta.js`：
+
+```js
+window.APP_META = {
+  author: "张三",      // 改成你的真名
+  contact: "G12345",   // 改成工号 / 联系方式
+  show: true,          // 改成 true，页脚才显示
+};
+```
+
+**注意**：公共 GitHub 仓库里的 `meta.js` 保持空白、`show:false`，不要在里面填真名工号
+（否则会推送到公开仓库）。正确做法是「复制一份出来打包，在副本里改」：
+
+打包（macOS，仓库根目录双击 `打包.command`）：
+
+```sh
+./打包.command
+# 生成：光谱颜色模拟器-内网版.zip（只含运行所需文件，不含 .venv / tools / test / cospec）
+```
+
+Windows 没有打包脚本，手动建 zip：选中 `index.html`、`styles.css`、`app.js`、
+`colorimetry.js`、`csv.js`、`core.js`、`meta.js`、`启动.bat`，右键压缩即可。
+
+发行包里的 `meta.js` 填好作者工号后，双击 `index.html` 打开，页脚即显示「作者：张三 · 联系：G12345」。

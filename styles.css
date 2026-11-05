@@ -295,3 +295,9 @@ table.values tr + tr th, table.values tr + tr td { border-top: 1px solid #f1f1f3
 
 input.wide { width: 100%; margin-bottom: 4px; }
 #reflCount { margin: 0 0 6px; color: var(--muted); font-size: 11px; }
+
+/* 页脚作者信息 */
+footer#foot {
+  padding: 10px 22px 18px;
+  color: #9a9aa2; font-size: 12px; text-align: center;
+}
