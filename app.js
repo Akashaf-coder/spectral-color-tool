@@ -755,6 +755,95 @@
     download("批量模拟.csv", CSV.toCsv([head, ...body]), "text/csv;charset=utf-8");
   }
 
+  function exportImage() {
+    const rows = state.lastBatch || [];
+    if (!rows.length) { alert("批量面板没有结果，先勾选。"); return; }
+    const chip = Math.min(400, Math.max(20, Number($("imgChipPx").value) || 120));
+    const gap = Math.max(1, Math.round(chip * 0.03));
+    const space = state.space;
+    const blocks = [];
+    const positional = state.batchMode === "refls" && $("batchPos").checked;
+
+    if (positional) {
+      const bRows = Number($("boardRows").value) || 4;
+      const bCols = Number($("boardCols").value) || 6;
+      const groups = {};
+      rows.forEach((r) => { const k = r.group || ""; (groups[k] = groups[k] || []).push(r); });
+      Object.keys(groups).sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b))).forEach((k) => {
+        const list = groups[k];
+        const ok = (r) => Number.isFinite(r.row) && Number.isFinite(r.col) && r.row >= 1 && r.col >= 1 && r.row <= bRows && r.col <= bCols;
+        const placed = list.filter(ok);
+        const rest = list.filter((r) => !ok(r));
+        const cells = new Array(bRows * bCols).fill(null);
+        placed.forEach((r) => { cells[(r.row - 1) * bCols + (r.col - 1)] = r; });
+        if (cells.some(Boolean)) blocks.push({ label: k || "未分组", cols: bCols, cells });
+        if (rest.length) blocks.push({ label: (k || "未分组") + "·其余", cols: Math.min(rest.length, 8), cells: rest });
+      });
+    } else {
+      const cols = Number($("batchCols").value) || Math.ceil(Math.sqrt(rows.length));
+      blocks.push({ label: "", cols: Math.max(1, cols), cells: rows });
+    }
+
+    const pad = 12;
+    const showLabels = blocks.length > 1;
+    const labelH = 18;
+    const dims = blocks.map((b) => {
+      const cols = b.cols;
+      const rowsC = Math.ceil(b.cells.length / cols);
+      return { ...b, cols, rowsC, w: cols * (chip + gap) - gap, h: rowsC * (chip + gap) - gap };
+    });
+    const W = Math.max(...dims.map((b) => b.w)) + pad * 2;
+    const H = dims.reduce((s, b) => s + b.h + (showLabels && b.label ? labelH + 2 : 0) + 6, 0) + pad;
+
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d");
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
+    ctx.font = "13px -apple-system, 'PingFang SC', sans-serif";
+
+    let y = pad;
+    dims.forEach((b) => {
+      const x = pad + Math.round((W - pad * 2 - b.w) / 2);
+      if (showLabels && b.label) {
+        ctx.fillStyle = "#555555";
+        ctx.fillText(b.label, x, y + 13);
+        y += labelH + 2;
+      }
+      for (let i = 0; i < b.cells.length; i++) {
+        const r = b.cells[i];
+        const cx = x + (i % b.cols) * (chip + gap);
+        const cy = y + Math.floor(i / b.cols) * (chip + gap);
+        if (r) {
+          const o = r.result.rgb[space];
+          ctx.fillStyle = o.hex;
+          ctx.fillRect(cx, cy, chip, chip);
+          if (!o.inside) {  // 超色域：右上角红三角
+            ctx.fillStyle = "#d33";
+            ctx.beginPath();
+            ctx.moveTo(cx + chip, cy);
+            ctx.lineTo(cx + chip - chip * 0.22, cy);
+            ctx.lineTo(cx + chip, cy + chip * 0.22);
+            ctx.closePath(); ctx.fill();
+          }
+        } else {
+          ctx.fillStyle = "#ececec";
+          ctx.fillRect(cx, cy, chip, chip);
+        }
+      }
+      y += b.h + 6;
+    });
+
+    cv.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "色卡渲染图.png";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+    }, "image/png");
+  }
+
   function illumLabel() {
     return state.illumName.replace(/^lib:/, "");
   }
@@ -1046,6 +1135,7 @@
     $("batchShowDE").addEventListener("change", renderBatch);
     $("batchShowCurves").addEventListener("change", renderBatch);
     $("btnBatchExport").addEventListener("click", exportBatch);
+    $("btnExportImage").addEventListener("click", exportImage);
     $("batchPresetSave").addEventListener("click", saveBatchPreset);
     $("batchPresetDel").addEventListener("click", delBatchPreset);
     $("batchPresetSel").addEventListener("change", applyBatchPreset);
