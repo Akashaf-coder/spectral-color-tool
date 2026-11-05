@@ -31,6 +31,8 @@
     measured: {},
     last: null,
     search: "",
+    illumSearch: "",
+    batchPickSearch: "",
     batchMode: "refls",
     batchReflIds: new Set(),
     batchIllums: new Set(["D65", "A"]),
@@ -184,25 +186,41 @@
 
   function renderIllumSelect() {
     const sel = $("selIllum");
+    const q = (state.illumSearch || "").trim().toLowerCase();
     const groups = CORE.illuminant_groups || {};
     const opts = [];
+    const rendered = new Set();
     const push = (label, names) => {
-      if (!names || !names.length) return;
+      const filtered = (names || []).filter((n) => !q || n.toLowerCase().includes(q));
+      if (!filtered.length) return;
       opts.push(`<optgroup label="${esc(label)}">` +
-        names.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("") + "</optgroup>");
+        filtered.map((n) => { rendered.add(n); return `<option value="${esc(n)}">${esc(n)}</option>`; }).join("") + "</optgroup>");
     };
     push("标准光源", groups["标准光源"]);
     push("荧光灯", groups["荧光灯 FL"]);
     push("LED", groups["LED"]);
     push("高压放电灯", groups["高压放电灯 HP"]);
+    const groupedBuiltin = new Set([].concat(...Object.values(groups)));
+    push("其他", Object.keys(CORE.illuminants).filter((n) => !groupedBuiltin.has(n)));
+    // 自定义光源按 group 字段分组
     const libs = illumItems();
-    if (libs.length) {
-      opts.push(`<optgroup label="我的库">` +
-        libs.map((i) => `<option value="lib:${i.id}">${esc(i.name)}</option>`).join("") + "</optgroup>");
+    const byGroup = {};
+    libs.forEach((i) => { const k = i.group || ""; (byGroup[k] = byGroup[k] || []).push(i); });
+    Object.keys(byGroup)
+      .sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)))
+      .forEach((k) => {
+        const label = k === "" ? "我的库" : k;
+        const arr = byGroup[k].filter((i) => !q ||
+          i.name.toLowerCase().includes(q) || (i.group || "").toLowerCase().includes(q));
+        if (!arr.length) return;
+        opts.push(`<optgroup label="${esc(label)}">` +
+          arr.map((i) => { const v = "lib:" + i.id; rendered.add(v); return `<option value="${v}">${esc(i.name)}</option>`; }).join("") + "</optgroup>");
+      });
+    sel.innerHTML = opts.join("");
+    // 保证当前选中项始终可见（即使被搜索过滤掉）
+    if (!rendered.has(state.illumName)) {
+      sel.innerHTML += `<option value="${esc(state.illumName)}">${esc(state.illumName.replace(/^lib:/, ""))}</option>`;
     }
-    const known = new Set([].concat(...Object.values(groups)).concat(libs.map((i) => "lib:" + i.id)));
-    sel.innerHTML = opts.join("") +
-      (known.has(state.illumName) ? "" : `<option value="${esc(state.illumName)}">${esc(state.illumName)}</option>`);
     sel.value = state.illumName;
     const total = Object.keys(CORE.illuminants).length + libs.length;
     $("illumHint").textContent = `内置 ${Object.keys(CORE.illuminants).length} 个 CIE 标准光源，库里 ${libs.length} 个（共 ${total}），数据 300–780nm / 5nm。`;
@@ -416,28 +434,58 @@
     return Object.keys(CORE.illuminants).concat(illumItems().map((i) => "lib:" + i.id));
   }
 
-  function groupMembers(name) {
-    if (name === "__lib") return illumItems().map((i) => "lib:" + i.id);
-    return (CORE.illuminant_groups || {})[name] || [];
+  /** 光源分组定义：内置 CIE 组 + 自定义光源按 group 字段分组 */
+  function illumGroupDefs() {
+    const defs = [];
+    const ciegroups = CORE.illuminant_groups || {};
+    Object.keys(ciegroups).forEach((k) => defs.push({ key: k, label: k, members: (ciegroups[k] || []).slice() }));
+    const groupedBuiltin = new Set([].concat(...Object.values(ciegroups)));
+    const rest = Object.keys(CORE.illuminants).filter((n) => !groupedBuiltin.has(n));
+    if (rest.length) defs.push({ key: "__builtin_rest", label: "其他", members: rest });
+    const byGroup = {};
+    illumItems().forEach((i) => { const k = i.group || "__ungrouped"; (byGroup[k] = byGroup[k] || []).push("lib:" + i.id); });
+    Object.keys(byGroup)
+      .sort((a, b) => (a === "__ungrouped" ? 1 : a.localeCompare(b)))
+      .forEach((k) => defs.push({ key: "__lib:" + k, label: k === "__ungrouped" ? "我的库" : k, members: byGroup[k] }));
+    return defs;
+  }
+
+  /** 反射率分组定义：按 group（卡）字段，无分组的落到「未分组」 */
+  function reflGroupDefs() {
+    const byGroup = {};
+    reflItems().forEach((it) => { const k = it.group || ""; (byGroup[k] = byGroup[k] || []).push(it); });
+    return Object.keys(byGroup)
+      .sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)))
+      .map((k) => ({ key: k, label: k === "" ? "未分组" : k, items: byGroup[k] }));
   }
 
   function renderBatchPicker() {
     const list = $("batchList");
-    const mode = state.batchMode;
-    let html;
-    if (mode === "refls") {
-      const items = reflItems();
-      html = items.map((it) => {
-        const on = state.batchReflIds.has(it.id);
-        return `<label class="cl"><input type="checkbox" data-refl="${it.id}" ${on ? "checked" : ""}>${esc(it.name)}</label>`;
-      }).join("");
-      if (!items.length) html = `<p class="hint">没有反射率，先在左侧导入。</p>`;
+    const q = (state.batchPickSearch || "").trim().toLowerCase();
+    let html = "";
+    if (state.batchMode === "refls") {
+      const defs = reflGroupDefs();
+      defs.forEach((d) => {
+        const items = d.items.filter((it) => !q ||
+          it.name.toLowerCase().includes(q) || (it.group || "").toLowerCase().includes(q));
+        if (!items.length) return;
+        html += `<div class="cl-group"><div class="cl-head">${esc(d.label)}</div>` +
+          items.map((it) => `<label class="cl"><input type="checkbox" data-refl="${it.id}" ${state.batchReflIds.has(it.id) ? "checked" : ""}>${esc(it.name)}</label>`).join("") +
+          `</div>`;
+      });
+      if (!defs.length) html = `<p class="hint">没有反射率，先在左侧导入。</p>`;
     } else {
-      const names = allIllumNames();
-      html = names.map((n) => {
-        const on = state.batchIllums.has(n);
-        return `<label class="cl"><input type="checkbox" data-ill="${esc(n)}" ${on ? "checked" : ""}>${esc(n.replace(/^lib:/, ""))}</label>`;
-      }).join("");
+      const defs = illumGroupDefs();
+      defs.forEach((d) => {
+        const names = d.members.filter((n) => {
+          const nm = n.replace(/^lib:/, "");
+          return !q || nm.toLowerCase().includes(q) || d.label.toLowerCase().includes(q);
+        });
+        if (!names.length) return;
+        html += `<div class="cl-group"><div class="cl-head">${esc(d.label)}</div>` +
+          names.map((n) => `<label class="cl"><input type="checkbox" data-ill="${esc(n)}" ${state.batchIllums.has(n) ? "checked" : ""}>${esc(n.replace(/^lib:/, ""))}</label>`).join("") +
+          `</div>`;
+      });
     }
     list.innerHTML = html;
     list.querySelectorAll("input[type=checkbox]").forEach((cb) => {
@@ -457,28 +505,21 @@
 
   function renderBatchGroups() {
     const box = $("batchGroups");
-    let names, labelOf, membersOf, hasMember, toggle;
+    let defs, hasMember, toggle;
     if (state.batchMode === "illums") {
-      names = Object.keys(CORE.illuminant_groups || {});
-      if (illumItems().length) names.push("__lib");
-      labelOf = (g) => (g === "__lib" ? "我的库" : g);
-      membersOf = groupMembers;
+      defs = illumGroupDefs();
       hasMember = (m) => state.batchIllums.has(m);
       toggle = (m, on) => m.forEach((x) => on ? state.batchIllums.add(x) : state.batchIllums.delete(x));
     } else {
-      // 反射率按「卡」（group 字段）分组
-      const byGroup = {};
-      reflItems().forEach((it) => { const k = it.group || ""; (byGroup[k] = byGroup[k] || []).push(it.id); });
-      names = Object.keys(byGroup).sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
-      labelOf = (g) => (g === "" ? "未分组" : g);
-      membersOf = (g) => byGroup[g] || [];
+      defs = reflGroupDefs().map((d) => ({ key: d.key, label: d.label, members: d.items.map((it) => it.id) }));
       hasMember = (id) => state.batchReflIds.has(id);
       toggle = (m, on) => m.forEach((id) => on ? state.batchReflIds.add(id) : state.batchReflIds.delete(id));
     }
-    box.innerHTML = names.map((g) => `<button class="sm ghost" data-grp="${esc(g)}">${esc(labelOf(g))}</button>`).join("");
+    box.innerHTML = defs.map((d) => `<button class="sm ghost" data-grp="${esc(d.key)}">${esc(d.label)}</button>`).join("");
     box.querySelectorAll("[data-grp]").forEach((b) => {
       b.addEventListener("click", () => {
-        const members = membersOf(b.dataset.grp);
+        const def = defs.find((d) => d.key === b.dataset.grp);
+        const members = def ? def.members : [];
         const on = !members.every((m) => hasMember(m));
         toggle(members, on);
         renderBatchPicker();
@@ -942,6 +983,8 @@
   function bind() {
     $("btnImportCsv").addEventListener("click", () => openModal("reflectance"));
     $("reflSearch").addEventListener("input", (e) => { state.search = e.target.value; renderLibrary(); });
+    $("illumSearch").addEventListener("input", (e) => { state.illumSearch = e.target.value; renderIllumSelect(); });
+    $("batchPickSearch").addEventListener("input", (e) => { state.batchPickSearch = e.target.value; renderBatchPicker(); });
     $("btnManual").addEventListener("click", () => {
       openModal($("imKind").value === "illuminant" ? "reflectance" : "reflectance");
       $("mTitle").textContent = "手动输入光谱";

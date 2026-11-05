@@ -41,7 +41,8 @@
 
     <div class="panel">
       <div class="panel-head"><h2>光源</h2></div>
-      <select id="selIllum" class="wide"></select>
+      <input type="search" id="illumSearch" class="wide" placeholder="搜索名称或分组">
+      <select id="selIllum" class="wide" style="margin-top:6px"></select>
       <p class="hint" id="illumHint"></p>
     </div>
   </section>
@@ -123,6 +124,7 @@
           <button id="batchNone" class="sm">清空</button>
           <span id="batchGroups" class="btns"></span>
         </div>
+        <input type="search" id="batchPickSearch" class="pick-search" placeholder="搜索名称或分组">
         <div class="checklist" id="batchList"></div>
       </div>
       <div class="batch-tools">

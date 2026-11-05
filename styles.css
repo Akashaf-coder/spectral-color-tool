@@ -226,15 +226,18 @@ table.values tr + tr th, table.values tr + tr td { border-top: 1px solid #f1f1f3
 }
 
 /* 批量模拟 */
-.batch-pick { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 12px; }
+.batch-pick { margin-bottom: 12px; }
+.pick-search { width: 100%; margin: 6px 0; }
 .checklist {
-  max-height: 168px; overflow: auto; flex: 1; min-width: 200px;
+  max-height: 200px; overflow: auto;
   border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
-  column-width: 150px; column-gap: 12px;
 }
+.cl-group { margin-bottom: 4px; }
+.cl-head { font-size: 11px; font-weight: 600; color: #3a3a3f; margin: 2px 0 4px; padding-top: 6px; border-top: 1px solid #f1f1f3; }
+.cl-group:first-child .cl-head { border-top: none; padding-top: 0; }
 .checklist .cl {
-  display: flex; align-items: center; gap: 6px; color: var(--text);
-  font-size: 12px; padding: 2px 0; break-inside: avoid; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; color: var(--text);
+  font-size: 12px; padding: 2px 12px 2px 0; cursor: pointer; white-space: nowrap;
 }
 .checklist .cl input { width: auto; margin: 0; }
 
