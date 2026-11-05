@@ -39,18 +39,29 @@
     lastBatch: [],
   };
 
+  function hasDefaultLibrary() {
+    const d = window.DEFAULT_LIBRARY;
+    return !!(d && Array.isArray(d.items) && d.items.length);
+  }
+
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const lib = JSON.parse(raw);
         if (lib && Array.isArray(lib.items)) state.library = lib;
+        else if (hasDefaultLibrary()) state.library = window.DEFAULT_LIBRARY;
+        else seed();
+      } else if (hasDefaultLibrary()) {
+        state.library = window.DEFAULT_LIBRARY;
+        save(); // 首次打开自动导入，写入本地便于下次快速打开
       } else {
         seed();
       }
     } catch (e) {
-      console.warn("读取本地库失败，使用示例数据", e);
-      seed();
+      console.warn("读取本地库失败", e);
+      if (hasDefaultLibrary()) state.library = window.DEFAULT_LIBRARY;
+      else seed();
     }
     if (!state.library.items.length) seed();
     state.selectedId = state.library.items[0] ? state.library.items[0].id : null;
@@ -1152,6 +1163,14 @@
     ["selMRgbSpace", "selMRgbScale"].forEach((id) => $(id).addEventListener("change", renderMeasured));
     $("btnExportResult").addEventListener("click", exportResult);
     $("btnExportLib").addEventListener("click", exportLibrary);
+    $("btnRestoreDefault").addEventListener("click", () => {
+      if (!hasDefaultLibrary()) return;
+      if (!confirm("恢复为打包自带的默认库？当前库会被替换。")) return;
+      state.library = window.DEFAULT_LIBRARY;
+      state.selectedId = state.library.items[0] ? state.library.items[0].id : null;
+      state.batchReflIds = new Set(reflItems().map((i) => i.id));
+      save(); renderLibrary(); renderIllumSelect(); recompute();
+    });
     $("btnImportLib").addEventListener("click", () => $("fileLib").click());
     $("fileLib").addEventListener("change", (e) => {
       const f = e.target.files[0];
@@ -1204,6 +1223,7 @@
   renderIllumSelect();
   renderLibrary();
   renderBatchPresets();
+  if (hasDefaultLibrary()) $("btnRestoreDefault").hidden = false;
   $("selObserver").value = state.observer;
   $("selSpace").value = state.space;
   recompute();

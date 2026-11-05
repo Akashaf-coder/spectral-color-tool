@@ -300,6 +300,22 @@ window.APP_META = {
 ```
 
 Windows 没有打包脚本，手动建 zip：选中 `index.html`、`styles.css`、`app.js`、
-`colorimetry.js`、`csv.js`、`core.js`、`meta.js`、`启动.bat`，右键压缩即可。
+`colorimetry.js`、`csv.js`、`core.js`、`meta.js`、`data/library.js`、`启动.bat`，右键压缩即可。
 
 发行包里的 `meta.js` 填好作者工号后，双击 `index.html` 打开，页脚即显示「作者：张三 · 联系：G12345」。
+
+### 预置默认库（用户免点导入）
+
+想让同事拿到包后直接就有你的几百条光谱，不用自己点「导入」：
+
+1. 把最终确认好的库导出成 JSON（网页右上角「导出库」，或你的脚本直接产出的 `library.json`）
+2. 把这个文件放到 `data/library.json`
+3. 跑 `打包.command`——它会自动把 JSON 转成内联的 `data/library.js`（file:// 不能 fetch JSON，必须内联）
+4. 同事首次双击 `index.html`，默认库自动载入；之后改动存在他们自己的浏览器里
+
+手动导入不受影响：「导入库 / 导出库」按钮照常可用；另外头部会多一个「恢复默认库」按钮，
+一键回到打包自带的那份（方便你更新库后让老用户刷新）。
+
+注意：`data/library.json` 已加入 .gitignore，真实数据不会进公共仓库。默认库只在「首次打开
+（无本地数据）」时自动导入——老用户已有本地库的话不会被动覆盖，要用「恢复默认库」或清缓存。
+

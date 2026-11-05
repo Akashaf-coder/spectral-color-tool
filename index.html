@@ -13,6 +13,7 @@
     <span class="sub">反射率 × 光源 → 颜色</span>
   </div>
   <div class="actions">
+    <button id="btnRestoreDefault" class="ghost" title="恢复为打包自带的默认库" hidden>恢复默认库</button>
     <button id="btnExportLib" title="把整个库导出成 JSON 文件（可放进 git）">导出库</button>
     <button id="btnImportLib" title="从 JSON 文件恢复库">导入库</button>
     <input type="file" id="fileLib" accept=".json" hidden>
@@ -268,6 +269,7 @@
 <script src="colorimetry.js"></script>
 <script src="csv.js"></script>
 <script src="meta.js"></script>
+<script src="data/library.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

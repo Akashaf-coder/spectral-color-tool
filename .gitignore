@@ -2,3 +2,6 @@
 __pycache__/
 .DS_Store
 *.pyc
+
+# 真实数据不提交
+data/library.json
