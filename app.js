@@ -104,6 +104,15 @@
     return state.library.items.find((i) => i.id === id) || null;
   }
 
+  /** 把 "lib:<id>" 或内置光源名解析成显示名（自定义光源用它的 name，不是内部 id） */
+  function illumNameOf(n) {
+    if (n && n.startsWith("lib:")) {
+      const it = itemById(n.slice(4));
+      return it ? it.name : n.slice(4);
+    }
+    return n || "";
+  }
+
   function toSD(item) {
     return { start: item.start, step: item.step, values: item.values };
   }
@@ -278,7 +287,7 @@
     sel.innerHTML = opts.join("");
     // 保证当前选中项始终可见（即使被搜索过滤掉）
     if (!rendered.has(state.illumName)) {
-      sel.innerHTML += `<option value="${esc(state.illumName)}">${esc(state.illumName.replace(/^lib:/, ""))}</option>`;
+      sel.innerHTML += `<option value="${esc(state.illumName)}">${esc(illumNameOf(state.illumName))}</option>`;
     }
     sel.value = state.illumName;
     const total = Object.keys(CORE.illuminants).length + libs.length;
@@ -339,7 +348,7 @@
       (obj.inside ? "" : `<div class="outgamut" title="超出 ${sp} 色域"></div>`);
     $("gamutTag").textContent = obj.inside ? "" : `超出 ${sp} 色域`;
 
-    $("resName").textContent = `${item.name} · ${state.illumName.replace(/^lib:/, "")} · ${state.observer === "2deg" ? "2°" : "10°"}`;
+    $("resName").textContent = `${item.name} · ${illumNameOf(state.illumName)} · ${state.observer === "2deg" ? "2°" : "10°"}`;
     $("vXYZ").textContent = result.XYZ.map((v) => fmt(v, 2)).join("   ");
     $("vLab").textContent = result.Lab.map((v) => fmt(v, 2)).join("   ");
     $("vLCh").textContent = `${fmt(result.LCh[0], 2)}   ${fmt(result.LCh[1], 1)}   ${fmt(result.LCh[2], 1)}°`;
@@ -537,12 +546,12 @@
       const defs = illumGroupDefs();
       defs.forEach((d) => {
         const names = d.members.filter((n) => {
-          const nm = n.replace(/^lib:/, "");
+          const nm = illumNameOf(n);
           return !q || nm.toLowerCase().includes(q) || d.label.toLowerCase().includes(q);
         });
         if (!names.length) return;
         html += `<div class="cl-group"><div class="cl-head">${esc(d.label)}</div>` +
-          names.map((n) => `<label class="cl"><input type="checkbox" data-ill="${esc(n)}" ${state.batchIllums.has(n) ? "checked" : ""}>${esc(n.replace(/^lib:/, ""))}</label>`).join("") +
+          names.map((n) => `<label class="cl"><input type="checkbox" data-ill="${esc(n)}" ${state.batchIllums.has(n) ? "checked" : ""}>${esc(illumNameOf(n))}</label>`).join("") +
           `</div>`;
       });
     }
@@ -637,7 +646,7 @@
             const illum = name.startsWith("lib:") ? toSD(itemById(name.slice(4))) : C.illuminant(name);
             const r = C.compute({ refl: toSD(it), illum, ...opts });
             rows.push({
-              reflName: it.name, illumName: name.replace(/^lib:/, ""), result: r,
+              reflName: it.name, illumName: illumNameOf(name), result: r,
               group: it.group || "", row: it.row, col: it.col,
               de: deLab ? C.deltaE2000(r.Lab, deLab) : null, dataIll: name,
             });
@@ -735,7 +744,7 @@
       state.batchIllums.forEach((name, i) => {
         try {
           const sd = name.startsWith("lib:") ? toSD(itemById(name.slice(4))) : C.illuminant(name);
-          series.push({ sd, color: PALETTE[i % PALETTE.length], label: name.replace(/^lib:/, ""), scaleToMax: true, width: 1.3 });
+          series.push({ sd, color: PALETTE[i % PALETTE.length], label: illumNameOf(name), scaleToMax: true, width: 1.3 });
         } catch (e) { /* 跳过 */ }
       });
       $("batchCurvesHint").textContent = `${series.length} 个光源（各自峰值归一到 1，比较形状）`;
@@ -798,7 +807,9 @@
     if (!rows.length) { alert("批量面板没有结果，先勾选并生成。"); return; }
     const n4 = (v) => (Math.abs(v) < 1e-9 ? 0 : v).toFixed(4);
     const head = ["反射率", "光源", "分组", "行", "列", "观察者", "积分区间", "X", "Y", "Z", "L*", "a*", "b*",
-      ...SPACES.flatMap((s) => [s + "_R", s + "_G", s + "_B"]), "HEX", "超色域", "ΔE00"];
+      ...SPACES.flatMap((s) => [s + "_R", s + "_G", s + "_B"]),
+      ...SPACES.map((s) => s + "_8bit"),
+      "HEX", "超色域", "ΔE00"];
     const body = rows.map((row) => {
       const res = row.result;
       return [
@@ -806,6 +817,7 @@
         `${res.range.lo}-${res.range.hi}nm@${res.range.step}nm`,
         ...res.XYZ.map(n4), ...res.Lab.map(n4),
         ...SPACES.flatMap((s) => res.rgb[s].rgb.map((v) => (Math.abs(v) < 1e-9 ? 0 : v).toFixed(5))),
+        ...SPACES.map((s) => res.rgb[s].clipped.map((v) => Math.round(v * 255)).join(",")),
         res.rgb[state.space].hex,
         SPACES.filter((s) => !res.rgb[s].inside).join("/") || "无",
         (row.de != null && Number.isFinite(row.de)) ? row.de.toFixed(3) : "",
@@ -904,7 +916,7 @@
   }
 
   function illumLabel() {
-    return state.illumName.replace(/^lib:/, "");
+    return illumNameOf(state.illumName);
   }
 
   /* ---------------- 实测对比 ---------------- */
@@ -1114,7 +1126,7 @@
       ...SPACES.flatMap((s) => [s + "_R", s + "_G", s + "_B"]),
       "HEX", "超色域", "ΔE00", "ΔE76"];
     const row = [
-      item.name, state.illumName.replace(/^lib:/, ""), state.observer,
+      item.name, illumNameOf(state.illumName), state.observer,
       `${result.range.lo}-${result.range.hi}nm@${result.range.step}nm`,
       ...result.XYZ.map(n4),
       ...result.Lab.map(n4),
@@ -1124,7 +1136,7 @@
       lab ? C.deltaE2000(result.Lab, lab).toFixed(3) : "",
       lab ? C.deltaE76(result.Lab, lab).toFixed(3) : "",
     ];
-    download(`${item.name}-${state.illumName.replace(/^lib:/, "")}.csv`, CSV.toCsv([head, row]), "text/csv;charset=utf-8");
+    download(`${item.name}-${illumNameOf(state.illumName)}.csv`, CSV.toCsv([head, row]), "text/csv;charset=utf-8");
   }
 
   /* ---------------- 事件绑定 ---------------- */
