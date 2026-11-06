@@ -32,8 +32,11 @@
         </div>
       </div>
       <input type="search" id="reflSearch" class="wide" placeholder="搜索名称或分组">
-      <p class="hint" id="reflCount"></p>
-      <ul id="listRefl" class="list"></ul>
+      <div class="row" style="justify-content:space-between; align-items:center; margin:2px 0 6px">
+        <p class="hint" id="reflCount" style="margin:0"></p>
+        <button id="reflToggle" class="sm ghost" hidden>全部展开</button>
+      </div>
+      <div id="listRefl" class="liblist"></div>
       <p id="emptyRefl" class="empty">还没有数据。点「导入 CSV」或「手动输入」，或者加载示例。</p>
       <div class="btns sample">
         <button id="btnSample" class="ghost sm">载入示例（18% 灰 / 白纸 / 橙色 / 窄带）</button>

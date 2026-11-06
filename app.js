@@ -33,6 +33,7 @@
     search: "",
     illumSearch: "",
     batchPickSearch: "",
+    expandedGroups: new Set(),
     batchMode: "refls",
     batchReflIds: new Set(),
     batchIllums: new Set(["D65", "A"]),
@@ -66,6 +67,7 @@
     if (!state.library.items.length) seed();
     state.selectedId = state.library.items[0] ? state.library.items[0].id : null;
     state.batchReflIds = new Set(reflItems().map((i) => i.id));
+    markSelectedGroupExpanded();
   }
 
   function save() {
@@ -128,33 +130,79 @@
     return state.library.items.filter((i) => i.kind === "illuminant");
   }
 
+  function itemHTML(it) {
+    const dot = dotHex(it);
+    return `<li data-id="${it.id}" class="${it.id === state.selectedId ? "active" : ""}">
+      <span class="swatchdot" style="background:${dot}"></span>
+      <span class="name" title="${esc(it.name)}">${esc(it.name)}</span>
+      <span class="meta">${it.start}–${Math.round(it.start + it.step * (it.values.length - 1))}nm / ${it.step}nm${it.group ? ` · ${esc(it.group)}·${it.row ?? "?"}·${it.col ?? "?"}` : ""}</span>
+      <button class="pos" data-pos="${it.id}" title="设置位置（分组,行,列）">⌖</button>
+      <button class="del" data-del="${it.id}" title="删除">×</button>
+    </li>`;
+  }
+
+  function markSelectedGroupExpanded() {
+    const it = itemById(state.selectedId);
+    if (it) state.expandedGroups.add(it.group || "");
+  }
+
   function renderLibrary() {
-    const ul = $("listRefl");
+    const box = $("listRefl");
     const q = (state.search || "").trim().toLowerCase();
     const all = reflItems();
-    const items = q
-      ? all.filter((it) => it.name.toLowerCase().includes(q) || (it.group || "").toLowerCase().includes(q))
-      : all;
-    ul.innerHTML = items.map((it) => {
-      const dot = dotHex(it);
-      return `<li data-id="${it.id}" class="${it.id === state.selectedId ? "active" : ""}">
-        <span class="swatchdot" style="background:${dot}"></span>
-        <span class="name" title="${esc(it.name)}">${esc(it.name)}</span>
-        <span class="meta">${it.start}–${Math.round(it.start + it.step * (it.values.length - 1))}nm / ${it.step}nm${it.group ? ` · ${esc(it.group)}·${it.row ?? "?"}·${it.col ?? "?"}` : ""}</span>
-        <button class="pos" data-pos="${it.id}" title="设置位置（分组,行,列）">⌖</button>
-        <button class="del" data-del="${it.id}" title="删除">×</button>
-      </li>`;
-    }).join("");
-    $("emptyRefl").hidden = items.length > 0;
-    $("emptyRefl").textContent = (q && !items.length)
+    const defs = reflGroupDefs();
+    let html = "";
+    let shown = 0;
+
+    if (q) {
+      const items = all.filter((it) => it.name.toLowerCase().includes(q) || (it.group || "").toLowerCase().includes(q));
+      shown = items.length;
+      html = `<ul class="list">` + items.map(itemHTML).join("") + `</ul>`;
+    } else {
+      defs.forEach((d) => {
+        const collapsed = !state.expandedGroups.has(d.key);
+        html += `<div class="lib-group">
+          <div class="lib-head" data-grp="${esc(d.key)}">
+            <span class="arrow">${collapsed ? "▸" : "▾"}</span>
+            <span class="glabel">${esc(d.label)}</span>
+            <span class="cnt">${d.items.length}</span>
+          </div>
+          <ul class="list" ${collapsed ? 'style="display:none"' : ""}>${d.items.map(itemHTML).join("")}</ul>
+        </div>`;
+      });
+      shown = all.length;
+    }
+
+    box.innerHTML = html;
+
+    if (q) {
+      $("reflCount").textContent = `显示 ${shown} / 共 ${all.length} 条`;
+      $("reflToggle").hidden = true;
+    } else {
+      $("reflCount").textContent = `共 ${all.length} 条 · ${defs.length} 组`;
+      $("reflToggle").hidden = !defs.length;
+      const allExpanded = defs.every((d) => state.expandedGroups.has(d.key));
+      $("reflToggle").textContent = allExpanded ? "全部收起" : "全部展开";
+    }
+    $("emptyRefl").hidden = shown > 0;
+    $("emptyRefl").textContent = q
       ? `没有匹配「${state.search}」`
       : "还没有数据。点「导入 CSV」或「手动输入」，或者加载示例。";
-    $("reflCount").textContent = q ? `显示 ${items.length} / 共 ${all.length} 条` : `共 ${all.length} 条`;
 
-    ul.querySelectorAll("li").forEach((li) => {
+    box.querySelectorAll(".lib-head").forEach((h) => {
+      h.addEventListener("click", () => {
+        const k = h.dataset.grp;
+        if (state.expandedGroups.has(k)) state.expandedGroups.delete(k);
+        else state.expandedGroups.add(k);
+        renderLibrary();
+      });
+    });
+
+    box.querySelectorAll("li").forEach((li) => {
       li.addEventListener("click", (e) => {
         if (e.target.dataset.del) return;
         state.selectedId = li.dataset.id;
+        markSelectedGroupExpanded();
         renderLibrary();
         recompute();
       });
@@ -164,7 +212,7 @@
         if (name && name.trim()) { it.name = name.trim(); save(); renderLibrary(); renderResult(); }
       });
     });
-    ul.querySelectorAll("[data-pos]").forEach((b) => {
+    box.querySelectorAll("[data-pos]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const it = itemById(b.dataset.pos);
@@ -182,7 +230,7 @@
         save(); renderLibrary(); renderBatchPicker(); recompute();
       });
     });
-    ul.querySelectorAll("[data-del]").forEach((b) => {
+    box.querySelectorAll("[data-del]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const it = itemById(b.dataset.del);
@@ -624,7 +672,7 @@
       : (state.batchMode === "refls" ? "勾选左侧至少一条反射率" : "勾选至少一个光源，并在左侧选中一条反射率");
     grid.querySelectorAll(".bcell").forEach((el) => {
       el.addEventListener("click", () => {
-        if (el.dataset.id) { state.selectedId = el.dataset.id; renderLibrary(); }
+        if (el.dataset.id) { state.selectedId = el.dataset.id; markSelectedGroupExpanded(); renderLibrary(); }
         if (el.dataset.ill) { state.illumName = el.dataset.ill; renderIllumSelect(); }
         recompute();
       });
@@ -1034,6 +1082,7 @@
     } else {
       state.selectedId = item.id;
       state.batchReflIds.add(item.id);
+      markSelectedGroupExpanded();
       renderLibrary();
       renderBatchPicker();
     }
@@ -1083,6 +1132,12 @@
   function bind() {
     $("btnImportCsv").addEventListener("click", () => openModal("reflectance"));
     $("reflSearch").addEventListener("input", (e) => { state.search = e.target.value; renderLibrary(); });
+    $("reflToggle").addEventListener("click", () => {
+      const defs = reflGroupDefs();
+      const allExpanded = defs.every((d) => state.expandedGroups.has(d.key));
+      defs.forEach((d) => allExpanded ? state.expandedGroups.delete(d.key) : state.expandedGroups.add(d.key));
+      renderLibrary();
+    });
     $("illumSearch").addEventListener("input", (e) => { state.illumSearch = e.target.value; renderIllumSelect(); });
     $("batchPickSearch").addEventListener("input", (e) => { state.batchPickSearch = e.target.value; renderBatchPicker(); });
     $("btnManual").addEventListener("click", () => {
@@ -1169,6 +1224,7 @@
       state.library = window.DEFAULT_LIBRARY;
       state.selectedId = state.library.items[0] ? state.library.items[0].id : null;
       state.batchReflIds = new Set(reflItems().map((i) => i.id));
+      markSelectedGroupExpanded();
       save(); renderLibrary(); renderIllumSelect(); recompute();
     });
     $("btnImportLib").addEventListener("click", () => $("fileLib").click());
@@ -1183,6 +1239,7 @@
           if (!confirm(`导入 ${lib.items.length} 条数据，替换当前库？`)) return;
           state.library = lib;
           state.selectedId = lib.items[0] ? lib.items[0].id : null;
+          markSelectedGroupExpanded();
           save(); renderLibrary(); renderIllumSelect(); recompute();
         } catch (err) {
           alert("导入失败：" + err.message);

@@ -301,3 +301,17 @@ footer#foot {
   padding: 10px 22px 18px;
   color: #9a9aa2; font-size: 12px; text-align: center;
 }
+
+/* 反射率库分组折叠 */
+.liblist { max-height: 55vh; overflow-y: auto; }
+.lib-group { margin-bottom: 2px; }
+.lib-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; border-radius: 6px; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: #3a3a3f; user-select: none;
+}
+.lib-head:hover { background: #f2f2f4; }
+.lib-head .arrow { width: 12px; color: #a0a0a8; flex: none; }
+.lib-head .glabel { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-head .cnt { font-size: 11px; color: #a0a0a8; font-weight: 400; }
+.lib-group .list { margin-left: 14px; }
