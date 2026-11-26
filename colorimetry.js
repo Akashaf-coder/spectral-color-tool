@@ -75,9 +75,10 @@
    * @param {object} refl     反射率 SD（0~1）
    * @param {object} illum    光源 SD
    * @param {string} obsKey   '2deg' | '10deg'
+   * @param {boolean} abs     是否绝对辐照度（真时 k=683，Y 为绝对光度值 lx）
    * @returns {{XYZ:number[], range:{lo:number,hi:number,step:number}, k:number}}
    */
-  function sdToXYZ(refl, illum, obsKey, step) {
+  function sdToXYZ(refl, illum, obsKey, step, abs) {
     step = step || 1;
     const obs = observer(obsKey);
     const { lo, hi } = commonRange([refl, illum, obs.x]);
@@ -100,11 +101,12 @@
       Z += s * r * zb * step;
       kd += s * yb * step;
     }
-    const k = 100 / kd;
+    const k = abs ? 683 : 100 / kd; // 绝对辐照度用 Km=683 lm/W，Y 即绝对光度值
     return {
       XYZ: [X * k, Y * k, Z * k],
       range: { lo: start, hi: start + (count - 1) * step, step, count },
       k,
+      abs: !!abs,
     };
   }
 
@@ -112,10 +114,10 @@
    * 某光源下的白点（完美漫反射体 R=1 的 XYZ），作为 Lab 参考白。
    * 传入 reflSd 时用它的波长网格积分，保证与样品同网格（Lab 才有意义）。
    */
-  function whitePoint(illum, obsKey, reflSd) {
+  function whitePoint(illum, obsKey, reflSd, abs) {
     const grid = reflSd || { start: illum.start, step: illum.step, values: illum.values };
     const ones = { start: grid.start, step: grid.step, values: new Array(grid.values.length).fill(1) };
-    return sdToXYZ(ones, illum, obsKey).XYZ;
+    return sdToXYZ(ones, illum, obsKey, 1, abs).XYZ;
   }
 
   /* ---------- XYZ / Lab / LCh ---------- */
@@ -289,17 +291,19 @@
    *   observerKey '2deg'|'10deg'
    *   spaces   要计算的色彩空间名数组
    *   adapt    是否先做色适应（把光源白点适应到显示空间白点），默认 true
+   *   abs      光源是否为绝对辐照度（真时 k=683，Y 为绝对光度值 lx）
    */
   function compute(o) {
     const illum = typeof o.illum === "string" ? illuminant(o.illum) : o.illum;
     const obsKey = o.observerKey || "2deg";
     const adapt = o.adapt !== false;
-    const res = sdToXYZ(o.refl, illum, obsKey);
-    const wp = whitePoint(illum, obsKey, o.refl);
+    const abs = !!o.abs;
+    const res = sdToXYZ(o.refl, illum, obsKey, 1, abs);
+    const wp = whitePoint(illum, obsKey, o.refl, abs);
     const Lab = xyzToLab(res.XYZ, wp);
     const out = {
       XYZ: res.XYZ, Lab, LCh: labToLch(Lab), whitePoint: wp, range: res.range,
-      adapted: adapt, rgb: {},
+      adapted: adapt, abs, rgb: {},
     };
     (o.spaces || CORE.space_order).forEach((name) => {
       const dstWP = space(name).whitepoint;

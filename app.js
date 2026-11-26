@@ -306,6 +306,15 @@
     return C.illuminant(state.illumName);
   }
 
+  /** 当前光源是否绝对辐照度（内置 CIE 光源一律相对；库里的看 abs 字段） */
+  function currentIllumAbs() {
+    if (state.illumName.startsWith("lib:")) {
+      const it = itemById(state.illumName.slice(4));
+      return !!(it && it.abs === "absolute");
+    }
+    return false;
+  }
+
   function recompute() {
     const it = itemById(state.selectedId);
     if (!it) { renderEmpty(); return; }
@@ -314,6 +323,7 @@
       r = C.compute({
         refl: toSD(it), illum: currentIllumSD(),
         observerKey: state.observer, spaces: SPACES, adapt: state.adapt,
+        abs: currentIllumAbs(),
       });
     } catch (e) {
       $("resName").textContent = "计算失败：" + e.message;
@@ -362,6 +372,14 @@
     $("vHex").textContent = obj.hex;
     $("rangeBadge").textContent = `积分 ${result.range.lo}–${result.range.hi}nm @${result.range.step}nm`;
     $("wpLine").textContent = `参考白（完美漫反射体）：X ${fmt(result.whitePoint[0], 2)} / Y ${fmt(result.whitePoint[1], 2)} / Z ${fmt(result.whitePoint[2], 2)}`;
+    const lume = $("luminanceLine");
+    if (result.abs) {
+      const Y = result.XYZ[1];
+      lume.textContent = `绝对 Y = ${fmt(Y, 2)} lx（K_m·∫E·R·ȳ·dλ，辐照度口径）· 朗伯体亮度 ≈ ${fmt(Y / Math.PI, 2)} cd/m²`;
+      lume.hidden = false;
+    } else {
+      lume.hidden = true;
+    }
   }
 
   /* ---------------- 曲线图 ---------------- */
@@ -996,10 +1014,16 @@
 
   let modalRows = null;
 
+  function updateImAbsVisibility() {
+    $("imAbsLabel").hidden = $("imKind").value !== "illuminant";
+  }
+
   function openModal(kind) {
     $("modal").hidden = false;
     $("mTitle").textContent = kind === "illuminant" ? "导入光源 SPD" : "导入 / 手动输入光谱";
     $("imKind").value = kind;
+    $("imAbs").value = "absolute";
+    updateImAbsVisibility();
     $("imName").value = "";
     $("imText").value = "";
     $("imWarn").hidden = true;
@@ -1085,6 +1109,7 @@
       values: series.values.map((v) => Math.round(v * 1e6) / 1e6),
       source: "csv", createdAt: new Date().toISOString(),
     };
+    if (kind === "illuminant") item.abs = $("imAbs").value; // 绝对辐照度 / 相对
     state.library.items.push(item);
     save();
     closeModal();
@@ -1280,6 +1305,7 @@
     ["imHeader", "imWl", "imVal", "imStart", "imStep", "imUnit", "imKind"].forEach((id) => {
       $(id).addEventListener("change", () => reparse(false));
     });
+    $("imKind").addEventListener("change", updateImAbsVisibility);
     $("modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
     window.addEventListener("resize", () => { if (state.last) renderPlot(); });

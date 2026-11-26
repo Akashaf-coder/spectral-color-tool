@@ -122,7 +122,7 @@ ILLUMINANTS = {k: {"start": v["start"], "step": v["step"], "values": v["values"]
 
 # ---------------- 主计算 ----------------
 
-def sd_to_xyz(refl, illum, observer="2deg", step=1):
+def sd_to_xyz(refl, illum, observer="2deg", step=1, abs_=False):
     obs = DATA["cmfs"][observer]
     ox = {"start": obs["start"], "step": obs["step"], "values": obs["x"]}
     oy = {"start": obs["start"], "step": obs["step"], "values": obs["y"]}
@@ -148,16 +148,16 @@ def sd_to_xyz(refl, illum, observer="2deg", step=1):
         Y += s * r * yb * step
         Z += s * r * zb * step
         kd += s * yb * step
-    k = 100.0 / kd
+    k = 683.0 if abs_ else 100.0 / kd  # 绝对辐照度用 Km=683 lm/W
     rng = {"lo": start, "hi": start + (count - 1) * step, "step": step, "count": count}
     return [X * k, Y * k, Z * k], rng
 
 
-def white_point(illum, observer="2deg", refl=None):
+def white_point(illum, observer="2deg", refl=None, abs_=False):
     grid = refl if refl is not None else illum
     ones = {"start": grid["start"], "step": grid["step"],
             "values": [1.0] * len(grid["values"])}
-    xyz, _ = sd_to_xyz(ones, illum, observer)
+    xyz, _ = sd_to_xyz(ones, illum, observer, abs_=abs_)
     return xyz
 
 
@@ -328,15 +328,15 @@ delta_e2000 = delta_e00  # 别名
 
 # ---------------- 便捷入口 ----------------
 
-def compute(refl, illum, observer="2deg", adapt=True, spaces=None):
-    """低层：refl/illum 都应是 {"start","step","values"} 字典。"""
+def compute(refl, illum, observer="2deg", adapt=True, spaces=None, abs_=False):
+    """低层：refl/illum 都应是 {"start","step","values"} 字典。abs_=True 时按绝对辐照度算（k=683）。"""
     obs_key = observer if observer in DATA["cmfs"] else "2deg"
-    xyz, rng = sd_to_xyz(refl, illum, obs_key)
-    wp = white_point(illum, obs_key, refl)
+    xyz, rng = sd_to_xyz(refl, illum, obs_key, abs_=abs_)
+    wp = white_point(illum, obs_key, refl, abs_=abs_)
     lab = xyz_to_lab(xyz, wp)
     out = {
         "XYZ": xyz, "Lab": lab, "LCh": lab_to_lch(lab),
-        "white_point": wp, "range": rng, "adapted": bool(adapt), "rgb": {},
+        "white_point": wp, "range": rng, "adapted": bool(adapt), "abs": bool(abs_), "rgb": {},
     }
     for name in spaces or SPACE_ORDER:
         dst_wp = DATA["spaces"][name]["whitepoint"]
@@ -350,7 +350,7 @@ def compute(refl, illum, observer="2deg", adapt=True, spaces=None):
     return out
 
 
-def simulate(refl, illum, observer="2deg", adapt=True, spaces=None):
+def simulate(refl, illum, observer="2deg", adapt=True, spaces=None, abs_=False):
     """反射率 × 光源 → 颜色。
 
     参数
@@ -359,10 +359,11 @@ def simulate(refl, illum, observer="2deg", adapt=True, spaces=None):
       observer '2deg'（CIE 1931 2°）或 '10deg'（CIE 1964 10°）
       adapt    是否先做 Bradford 色适应到显示空间白点（默认 True）
       spaces   要算的 RGB 空间列表，默认全部四个
+      abs_     光源是否为绝对辐照度（True 时 k=683，Y 为绝对光度值 lx）
 
-    返回 dict：XYZ / Lab / LCh / white_point / range / adapted / rgb{space:{rgb,hex,inside,clipped}}
+    返回 dict：XYZ / Lab / LCh / white_point / range / adapted / abs / rgb{space:{rgb,hex,inside,clipped}}
     """
-    return compute(coerce_sd(refl, "反射率"), illuminate(illum), observer, adapt, spaces)
+    return compute(coerce_sd(refl, "反射率"), illuminate(illum), observer, adapt, spaces, abs_=abs_)
 
 
 def delta_e(lab1, lab2, method="CIE2000"):
