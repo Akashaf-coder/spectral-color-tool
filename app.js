@@ -34,6 +34,7 @@
     illumSearch: "",
     batchPickSearch: "",
     expandedGroups: new Set(),
+    expandedIllumGroups: new Set(),
     batchMode: "refls",
     batchReflIds: new Set(),
     batchIllums: new Set(["D65", "A"]),
@@ -252,47 +253,105 @@
     });
   }
 
-  function renderIllumSelect() {
-    const sel = $("selIllum");
-    const q = (state.illumSearch || "").trim().toLowerCase();
-    const groups = CORE.illuminant_groups || {};
-    const opts = [];
-    const rendered = new Set();
-    const push = (label, names) => {
-      const filtered = (names || []).filter((n) => !q || n.toLowerCase().includes(q));
-      if (!filtered.length) return;
-      opts.push(`<optgroup label="${esc(label)}">` +
-        filtered.map((n) => { rendered.add(n); return `<option value="${esc(n)}">${esc(n)}</option>`; }).join("") + "</optgroup>");
-    };
-    push("标准光源", groups["标准光源"]);
-    push("荧光灯", groups["荧光灯 FL"]);
-    push("LED", groups["LED"]);
-    push("高压放电灯", groups["高压放电灯 HP"]);
-    const groupedBuiltin = new Set([].concat(...Object.values(groups)));
-    push("其他", Object.keys(CORE.illuminants).filter((n) => !groupedBuiltin.has(n)));
-    // 自定义光源按 group 字段分组
-    const libs = illumItems();
-    const byGroup = {};
-    libs.forEach((i) => { const k = i.group || ""; (byGroup[k] = byGroup[k] || []).push(i); });
-    Object.keys(byGroup)
-      .sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)))
-      .forEach((k) => {
-        const label = k === "" ? "我的库" : k;
-        const arr = byGroup[k].filter((i) => !q ||
-          i.name.toLowerCase().includes(q) || (i.group || "").toLowerCase().includes(q));
-        if (!arr.length) return;
-        opts.push(`<optgroup label="${esc(label)}">` +
-          arr.map((i) => { const v = "lib:" + i.id; rendered.add(v); return `<option value="${v}">${esc(i.name)}</option>`; }).join("") + "</optgroup>");
-      });
-    sel.innerHTML = opts.join("");
-    // 保证当前选中项始终可见（即使被搜索过滤掉）
-    if (!rendered.has(state.illumName)) {
-      sel.innerHTML += `<option value="${esc(state.illumName)}">${esc(illumNameOf(state.illumName))}</option>`;
+  function illumItemHTML(name) {
+    if (name.startsWith("lib:")) {
+      const it = itemById(name.slice(4));
+      if (!it) return "";
+      const abs = it.abs === "absolute";
+      return `<li data-ill="${esc(name)}" class="${name === state.illumName ? "active" : ""}">
+        <span class="name" title="${esc(it.name)}">${esc(it.name)}</span>
+        <span class="meta">${it.start}–${Math.round(it.start + it.step * (it.values.length - 1))}nm / ${it.step}nm</span>
+        <button class="abs" data-abs="${it.id}" title="切换绝对辐照度 / 相对">${abs ? "绝对" : "相对"}</button>
+        <button class="del" data-del="${it.id}" title="删除">×</button>
+      </li>`;
     }
-    sel.value = state.illumName;
-    const total = Object.keys(CORE.illuminants).length + libs.length;
-    $("illumHint").textContent = `内置 ${Object.keys(CORE.illuminants).length} 个 CIE 标准光源，库里 ${libs.length} 个（共 ${total}），数据 300–780nm / 5nm。`;
-    renderBatchPicker();
+    return `<li data-ill="${esc(name)}" class="${name === state.illumName ? "active" : ""}">
+      <span class="name">${esc(name)}</span>
+      <span class="meta">内置</span>
+    </li>`;
+  }
+
+  function renderIllumList() {
+    const box = $("listIllum");
+    const q = (state.illumSearch || "").trim().toLowerCase();
+    const match = (name) => {
+      if (!q) return true;
+      if (name.startsWith("lib:")) {
+        const it = itemById(name.slice(4));
+        return !!it && (it.name.toLowerCase().includes(q) || (it.group || "").toLowerCase().includes(q));
+      }
+      return name.toLowerCase().includes(q);
+    };
+    const defs = illumGroupDefs();
+    let html = "";
+    let shown = 0;
+    if (q) {
+      const names = allIllumNames().filter(match);
+      shown = names.length;
+      html = `<ul class="list">` + names.map(illumItemHTML).join("") + `</ul>`;
+    } else {
+      defs.forEach((d) => {
+        const members = d.members.filter(match);
+        if (!members.length) return;
+        const collapsed = !state.expandedIllumGroups.has(d.key);
+        html += `<div class="lib-group">
+          <div class="lib-head" data-igrp="${esc(d.key)}">
+            <span class="arrow">${collapsed ? "▸" : "▾"}</span>
+            <span class="glabel">${esc(d.label)}</span>
+            <span class="cnt">${members.length}</span>
+          </div>
+          <ul class="list" ${collapsed ? 'style="display:none"' : ""}>${members.map(illumItemHTML).join("")}</ul>
+        </div>`;
+      });
+      shown = defs.reduce((n, d) => n + d.members.length, 0);
+    }
+    box.innerHTML = html;
+    $("emptyIllum").hidden = shown > 0;
+    $("illumHint").textContent = q
+      ? `匹配 ${shown} 条`
+      : `内置 ${Object.keys(CORE.illuminants).length} 个 CIE 标准光源，库里 ${illumItems().length} 个，数据 300–780nm / 5nm。`;
+
+    box.querySelectorAll(".lib-head").forEach((h) => {
+      h.addEventListener("click", () => {
+        const k = h.dataset.igrp;
+        if (state.expandedIllumGroups.has(k)) state.expandedIllumGroups.delete(k);
+        else state.expandedIllumGroups.add(k);
+        renderIllumList();
+      });
+    });
+    box.querySelectorAll("li").forEach((li) => {
+      li.addEventListener("click", (e) => {
+        if (e.target.dataset.del || e.target.dataset.abs) return;
+        state.illumName = li.dataset.ill;
+        renderIllumList();
+        recompute();
+      });
+      li.addEventListener("dblclick", () => {
+        const n = li.dataset.ill;
+        if (!n.startsWith("lib:")) return; // 内置 CIE 光源只读
+        const it = itemById(n.slice(4));
+        const name = prompt("重命名", it.name);
+        if (name && name.trim()) { it.name = name.trim(); save(); renderIllumList(); renderBatchPicker(); renderResult(); }
+      });
+    });
+    box.querySelectorAll("[data-abs]").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const it = itemById(b.dataset.abs);
+        it.abs = it.abs === "absolute" ? "relative" : "absolute";
+        save(); renderIllumList(); recompute();
+      });
+    });
+    box.querySelectorAll("[data-del]").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const it = itemById(b.dataset.del);
+        if (!confirm(`删除光源「${it.name}」？`)) return;
+        state.library.items = state.library.items.filter((x) => x.id !== it.id);
+        if (state.illumName === "lib:" + it.id) state.illumName = "D65";
+        save(); renderIllumList(); renderBatchPicker(); recompute();
+      });
+    });
   }
 
   /* ---------------- 计算 ---------------- */
@@ -700,7 +759,7 @@
     grid.querySelectorAll(".bcell").forEach((el) => {
       el.addEventListener("click", () => {
         if (el.dataset.id) { state.selectedId = el.dataset.id; markSelectedGroupExpanded(); renderLibrary(); }
-        if (el.dataset.ill) { state.illumName = el.dataset.ill; renderIllumSelect(); }
+        if (el.dataset.ill) { state.illumName = el.dataset.ill; renderIllumList(); }
         recompute();
       });
     });
@@ -1115,7 +1174,8 @@
     closeModal();
     if (kind === "illuminant") {
       state.illumName = "lib:" + item.id;
-      renderIllumSelect();
+      renderIllumList();
+      renderBatchPicker();
     } else {
       state.selectedId = item.id;
       state.batchReflIds.add(item.id);
@@ -1175,7 +1235,7 @@
       defs.forEach((d) => allExpanded ? state.expandedGroups.delete(d.key) : state.expandedGroups.add(d.key));
       renderLibrary();
     });
-    $("illumSearch").addEventListener("input", (e) => { state.illumSearch = e.target.value; renderIllumSelect(); });
+    $("illumSearch").addEventListener("input", (e) => { state.illumSearch = e.target.value; renderIllumList(); });
     $("batchPickSearch").addEventListener("input", (e) => { state.batchPickSearch = e.target.value; renderBatchPicker(); });
     $("btnManual").addEventListener("click", () => {
       openModal($("imKind").value === "illuminant" ? "reflectance" : "reflectance");
@@ -1189,7 +1249,6 @@
       save(); renderLibrary(); recompute();
     });
 
-    $("selIllum").addEventListener("change", (e) => { state.illumName = e.target.value; recompute(); });
     $("selObserver").addEventListener("change", (e) => { state.observer = e.target.value; recompute(); });
     $("selSpace").addEventListener("change", (e) => { state.space = e.target.value; renderResult(); renderMeasured(); renderBatch(); });
     $("chkIllum").addEventListener("change", (e) => { state.showIllum = e.target.checked; renderPlot(); });
@@ -1262,7 +1321,7 @@
       state.selectedId = state.library.items[0] ? state.library.items[0].id : null;
       state.batchReflIds = new Set(reflItems().map((i) => i.id));
       markSelectedGroupExpanded();
-      save(); renderLibrary(); renderIllumSelect(); recompute();
+      save(); renderLibrary(); renderIllumList(); recompute();
     });
     $("btnImportLib").addEventListener("click", () => $("fileLib").click());
     $("fileLib").addEventListener("change", (e) => {
@@ -1277,7 +1336,7 @@
           state.library = lib;
           state.selectedId = lib.items[0] ? lib.items[0].id : null;
           markSelectedGroupExpanded();
-          save(); renderLibrary(); renderIllumSelect(); recompute();
+          save(); renderLibrary(); renderIllumList(); recompute();
         } catch (err) {
           alert("导入失败：" + err.message);
         }
@@ -1315,7 +1374,7 @@
 
   load();
   bind();
-  renderIllumSelect();
+  renderIllumList();
   renderLibrary();
   renderBatchPresets();
   if (hasDefaultLibrary()) $("btnRestoreDefault").hidden = false;

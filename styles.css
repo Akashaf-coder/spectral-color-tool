@@ -292,6 +292,8 @@ table.values tr + tr th, table.values tr + tr td { border-top: 1px solid #f1f1f3
 .bcell.empty:hover { background: transparent; border-color: #e8e8ec; }
 .list li .pos { border: none; background: transparent; color: #b0b0b6; padding: 2px 4px; font-size: 13px; line-height: 1; }
 .list li .pos:hover { color: #2f6feb; background: transparent; }
+.list li .abs { border: 1px solid #d5d5da; border-radius: 3px; background: transparent; color: #666; padding: 1px 5px; font-size: 11px; line-height: 1.2; }
+.list li .abs:hover { border-color: #2f6feb; color: #2f6feb; }
 
 input.wide { width: 100%; margin-bottom: 4px; }
 #reflCount { margin: 0 0 6px; color: var(--muted); font-size: 11px; }
