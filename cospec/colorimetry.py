@@ -338,9 +338,12 @@ def compute(refl, illum, observer="2deg", adapt=True, spaces=None, abs_=False):
         "XYZ": xyz, "Lab": lab, "LCh": lab_to_lch(lab),
         "white_point": wp, "range": rng, "adapted": bool(adapt), "abs": bool(abs_), "rgb": {},
     }
+    # 先归一化到"源白点 Y=100"的相对尺度（xyz_to_rgb 内部按 /100 约定）。
+    # 绝对模式下 wp[1] 是几千 lx，不归一的话 RGB 会全部超色域。
+    xyz_w = [q * (100.0 / wp[1]) for q in xyz]
     for name in spaces or SPACE_ORDER:
         dst_wp = DATA["spaces"][name]["whitepoint"]
-        X = adapt_xyz(xyz, wp, dst_wp) if adapt else xyz
+        X = adapt_xyz(xyz_w, wp, dst_wp) if adapt else xyz_w
         rgb = xyz_to_rgb(X, name)
         g = gamut(rgb)
         out["rgb"][name] = {

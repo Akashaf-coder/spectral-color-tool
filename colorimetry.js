@@ -305,9 +305,12 @@
       XYZ: res.XYZ, Lab, LCh: labToLch(Lab), whitePoint: wp, range: res.range,
       adapted: adapt, abs, rgb: {},
     };
+    // 先把 XYZ 缩放到"源白点 Y=100"的相对尺度（xyzToRgb 内部按 /100 约定）。
+    // 绝对模式下 wp[1] 是几千 lx，不归一的话 RGB 会全部爆出超色域。
+    const XYZw = res.XYZ.map((q) => q * (100 / wp[1]));
     (o.spaces || CORE.space_order).forEach((name) => {
       const dstWP = space(name).whitepoint;
-      const XYZ = adapt ? adaptXYZ(res.XYZ, wp, dstWP) : res.XYZ;
+      const XYZ = adapt ? adaptXYZ(XYZw, wp, dstWP) : XYZw;
       const rgb = xyzToRgb(XYZ, name);
       out.rgb[name] = { rgb, ...gamut(rgb), hex: rgbToHex(gamut(rgb).clipped) };
     });
